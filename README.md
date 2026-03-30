@@ -63,7 +63,8 @@ No bloat. No BS. Just raw network intelligence.
 git clone https://github.com/HaxL0p4/L0p4Map.git
 cd L0p4Map
 pip install -r requirements.txt
-sudo python3 ui/app.py
+sudo chmod +x L0p4Map.sh
+./L0p4Map.sh
 ```
 
 ---
@@ -73,7 +74,8 @@ sudo python3 ui/app.py
 Launch the tool with root privileges:
 
 ```bash
-sudo python3 ui/app.py
+sudo chmod +x L0p4Map.sh
+sudo ./L0p4Map.sh
 ```
 
 1. Press **[ SCAN ]** to discover all devices on your network

@@ -248,7 +248,6 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(12,12,12,12)
         layout.setSpacing(6)
 
-        # target
         target_label = QLabel("TARGET")
         target_label.setStyleSheet("""
                 color: #00ff99;
@@ -274,7 +273,6 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.scan_target)
         layout.setSpacing(8)
 
-        # Sezioni Opzioni
         self._scan_checks = {}
         sections = {
         "SCAN TYPE": [
@@ -369,7 +367,6 @@ class MainWindow(QMainWindow):
                 layout.addWidget(cb)
             layout.addSpacing(4)
 
-        # custom flags
         sep = QWidget()
         sep.setFixedHeight(1)
         sep.setStyleSheet("background-color: #1a1a1a;")
@@ -494,7 +491,7 @@ class MainWindow(QMainWindow):
     def _build_graph_page(self):
         page = QWidget()
         layout = QVBoxLayout(page)
-        label = QLabel("// Section still in development :)")
+        label = QLabel("// Still in development :)")
         label.setStyleSheet("color: #333333; font-size: 14px;")
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(label)
@@ -509,6 +506,7 @@ class MainWindow(QMainWindow):
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.verticalHeader().setVisible(False)
         self.table.itemSelectionChanged.connect(self._on_device_selected)
+        self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         return self.table
 
     def _build_detail_panel(self):

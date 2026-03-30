@@ -6,6 +6,11 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem, QHeaderView, QTextEdit,
     QComboBox, QStackedWidget, QCheckBox, QLineEdit, QScrollArea
 )
+
+from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtCore import QUrl
+import json
+
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
 import subprocess
@@ -491,10 +496,30 @@ class MainWindow(QMainWindow):
     def _build_graph_page(self):
         page = QWidget()
         layout = QVBoxLayout(page)
-        label = QLabel("// Still in development :)")
-        label.setStyleSheet("color: #333333; font-size: 14px;")
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(label)
+        layout.setContentsMargins(0,0,0,0)
+        layout.setSpacing(0)
+
+        header = QLabel("// Network topology graph")
+        header.setFixedHeight(36)
+        header.setStyleSheet("""
+                background-color: #080808;
+                color: #444444;
+                font-size: 11px;
+                padding: 0px 12px;
+                border-bottom: 1px solid #1a1a1a;
+        """)
+        layout.addWidget(header)
+
+        # web engine view con vis.js
+        self.graph_view = QWebEngineView()
+        self.graph_view.setStyleSheet("background-color: #0d0d0d;")
+
+        html_path = os.path.join(
+            os.path.dirname(__file__), "assets", "graph.html"
+        )
+        self.graph_view.load(QUrl.fromLocalFile(html_path))
+        layout.addWidget(self.graph_view, stretch=1)
+
         return page
 
     def _build_table(self):
@@ -576,12 +601,6 @@ class MainWindow(QMainWindow):
         for btn in [self.btn_ping, self.btn_portscan, self.btn_traceroute]:
             btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             btn.setEnabled(False)
-            btn.setStyleSheet("""
-                QPushButton:hover {
-                    font-size: 11px;
-                    color: #00ff99;
-                }
-            """)
             layout.addWidget(btn)
 
         layout.addStretch()
@@ -631,6 +650,13 @@ class MainWindow(QMainWindow):
         self._populate_table(hosts)
         self.statusBar().showMessage(f"{len(hosts)} device found.")
         self.scan_button.setEnabled(True)
+        self._update_graph(hosts)
+
+    def _update_graph(self, hosts):
+        if not hasattr(self, 'graph_view'):
+            return
+        data = json.dumps(hosts)
+        self.graph_view.page().runJavaScript(f"updateGraph('{data}')")
 
     def _go_to_scan(self):
         row = self.table.currentRow()
@@ -692,6 +718,7 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     check_root()
+    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--no-sandbox"
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()

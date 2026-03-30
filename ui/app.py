@@ -576,6 +576,12 @@ class MainWindow(QMainWindow):
         for btn in [self.btn_ping, self.btn_portscan, self.btn_traceroute]:
             btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             btn.setEnabled(False)
+            btn.setStyleSheet("""
+                QPushButton:hover {
+                    font-size: 11px;
+                    color: #00ff99;
+                }
+            """)
             layout.addWidget(btn)
 
         layout.addStretch()

@@ -113,14 +113,12 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
 
-        # Layout root: verticale — toolbar in cima, poi body
         root_layout = QVBoxLayout(central)
         root_layout.setSpacing(0)
         root_layout.setContentsMargins(0, 0, 0, 0)
 
         root_layout.addWidget(self._build_toolbar())
 
-        # Body: orizzontale — sidebar sinistra + stack pagine
         body = QWidget()
         body_layout = QHBoxLayout(body)
         body_layout.setSpacing(0)
@@ -129,9 +127,9 @@ class MainWindow(QMainWindow):
         body_layout.addWidget(self._build_sidebar())
 
         self.stack = QStackedWidget()
-        self.stack.addWidget(self._build_home_page())   # 0
-        self.stack.addWidget(self._build_scan_page())   # 1
-        self.stack.addWidget(self._build_graph_page())  # 2
+        self.stack.addWidget(self._build_home_page())   
+        self.stack.addWidget(self._build_scan_page())   
+        self.stack.addWidget(self._build_graph_page())  
         body_layout.addWidget(self.stack, stretch=1)
 
         root_layout.addWidget(body, stretch=1)
@@ -415,7 +413,6 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0,0,0,0)
         layout.setSpacing(0)
 
-        # header con comando attivo
         self.scan_cmd_label = QLabel("// no active scan.")
         self.scan_cmd_label.setStyleSheet("""
                 background-color: #080808;
@@ -426,7 +423,6 @@ class MainWindow(QMainWindow):
         """)
         layout.addWidget(self.scan_cmd_label)
 
-        # output box grande
         self.scan_output = QTextEdit()
         self.scan_output.setReadOnly(True)
         self.scan_output.setStyleSheet("""
@@ -449,7 +445,6 @@ class MainWindow(QMainWindow):
             self.scan_output.append("// error: no target specified")
             return
 
-        # costruzione del comando
         cmd = ["nmap"]
         for flag, cb in self._scan_checks.items():
             if cb.isChecked():
@@ -505,7 +500,6 @@ class MainWindow(QMainWindow):
         layout.addWidget(label)
         return page
 
-    # ── tabella ──────────────────────────────────────────
     def _build_table(self):
         self.table = QTableWidget()
         self.table.setColumnCount(4)
@@ -517,7 +511,6 @@ class MainWindow(QMainWindow):
         self.table.itemSelectionChanged.connect(self._on_device_selected)
         return self.table
 
-    # ── pannello dettagli ─────────────────────────────────
     def _build_detail_panel(self):
         self.detail_panel = QWidget()
         self.detail_panel.setStyleSheet("background-color: #0a0a0a; border-left: 1px solid #1a1a1a;")
@@ -590,7 +583,6 @@ class MainWindow(QMainWindow):
         layout.addStretch()
         return self.detail_panel
 
-    # ── selezione dispositivo ─────────────────────────────
     def _on_device_selected(self):
         selected = self.table.selectedItems()
         if not selected:
@@ -610,7 +602,6 @@ class MainWindow(QMainWindow):
         for btn in [self.btn_ping, self.btn_portscan, self.btn_traceroute]:
             btn.setEnabled(True)
 
-    # ── scan rete ─────────────────────────────────────────
     def _start_scan(self):
         self.scan_button.setEnabled(False)
         self.statusBar().showMessage("Scanning...")
@@ -637,7 +628,6 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"{len(hosts)} device found.")
         self.scan_button.setEnabled(True)
 
-    # ── navigazione ───────────────────────────────────────
     def _go_to_scan(self):
         row = self.table.currentRow()
         if row < 0:
@@ -646,7 +636,6 @@ class MainWindow(QMainWindow):
         self.scan_target.setText(self.current_target_ip)
         self.stack.setCurrentIndex(1)
 
-    # ── ping ──────────────────────────────────────────────
     def _run_ping(self):
         row = self.table.currentRow()
         if row < 0:
@@ -663,7 +652,6 @@ class MainWindow(QMainWindow):
         )
         self.action_worker.start()
 
-    # ── traceroute ────────────────────────────────────────
     def _run_traceroute(self):
         row = self.table.currentRow()
         if row < 0:

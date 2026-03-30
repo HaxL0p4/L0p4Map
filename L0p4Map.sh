@@ -1,5 +1,4 @@
 #!/bin/bash
-
 REPO_DIR="$(pwd)"
 BRANCH="main"
 
@@ -15,9 +14,21 @@ if ! command -v nmap >/dev/null 2>&1; then
     fi
 fi
 
-cd "$REPO_DIR" || exit 1
-git fetch origin "$BRANCH" >/dev/null 2>&1
+if ! python3 -c "from PyQt6.QtWebEngineWidgets import QWebEngineView" >/dev/null 2>&1; then
+    echo "Installing PyQt6-WebEngine..."
+    if command -v pacman >/dev/null 2>&1; then
+        sudo pacman -Sy --noconfirm --noprogressbar python-pyqt6-webengine >/dev/null
+    elif command -v apt >/dev/null 2>&1; then
+        sudo apt install -y -qq python3-pyqt6.qtwebengine
+    else
+        echo "Package manager not yet supported."
+        exit 1
+    fi
+fi
 
+cd "$REPO_DIR" || exit 1
+
+git fetch origin "$BRANCH" >/dev/null 2>&1
 LOCAL=$(git rev-parse "$BRANCH")
 REMOTE=$(git rev-parse "origin/$BRANCH")
 

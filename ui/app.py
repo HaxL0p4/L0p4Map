@@ -499,7 +499,7 @@ class MainWindow(QMainWindow):
     def _build_graph_page(self):
         page = QWidget()
         layout = QVBoxLayout(page)
-        label = QLabel("// run a scan first")
+        label = QLabel("// Section still in development :)")
         label.setStyleSheet("color: #333333; font-size: 14px;")
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(label)

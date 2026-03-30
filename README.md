@@ -64,7 +64,6 @@ git clone https://github.com/HaxL0p4/L0p4Map.git
 cd L0p4Map
 pip install -r requirements.txt
 sudo chmod +x L0p4Map.sh
-./L0p4Map.sh
 ```
 
 ---
@@ -74,7 +73,6 @@ sudo chmod +x L0p4Map.sh
 Launch the tool with root privileges:
 
 ```bash
-sudo chmod +x L0p4Map.sh
 sudo ./L0p4Map.sh
 ```
 

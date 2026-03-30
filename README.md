@@ -2,14 +2,16 @@
 
 # L0p4Map
 
-**nmap was blind. L0p4Map sees.**
+**Nmap was blind. L0p4Map sees.**
 
 ![Python](https://img.shields.io/badge/Python-3.11+-00ff99?style=flat-square&logo=python&logoColor=black)
 ![Platform](https://img.shields.io/badge/Platform-Linux-00ff99?style=flat-square&logo=linux&logoColor=black)
-![License](https://img.shields.io/badge/License-MIT-00ff99?style=flat-square)
+![License](https://img.shields.io/badge/License-GPL--v3-00ff99?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-Active%20Development-orange?style=flat-square)
 
 Professional network monitoring & visualization tool built for security researchers.
+
+![L0p4Map Home](img/lopamap1.png)
 
 </div>
 
@@ -36,6 +38,16 @@ No bloat. No BS. Just raw network intelligence.
 
 ---
 
+## Screenshots
+
+### Home — Network Scanner
+![Home](img/lopamap1.png)
+
+### Port Scan — Full nmap Integration
+![Port Scan](img/lopamap2.png)
+
+---
+
 ## Requirements
 
 - Linux (tested on Arch Linux)
@@ -46,6 +58,7 @@ No bloat. No BS. Just raw network intelligence.
 ---
 
 ## Installation
+
 ```bash
 git clone https://github.com/HaxL0p4/L0p4Map.git
 cd L0p4Map
@@ -58,6 +71,7 @@ sudo python3 ui/app.py
 ## Usage
 
 Launch the tool with root privileges:
+
 ```bash
 sudo python3 ui/app.py
 ```
@@ -78,8 +92,6 @@ This tool is designed for **authorized network auditing only**. Only use L0p4Map
 ## Author
 
 **HaxL0p4** — [GitHub](https://github.com/HaxL0p4)
-
-> *Built from scratch. No wrappers. No shortcuts.*
 
 ---
 

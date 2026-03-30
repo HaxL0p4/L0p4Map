@@ -2,7 +2,7 @@
 
 # L0p4Map
 
-**nmap was blind. Not anymore.**
+**nmap was blind. L0p4Map sees.**
 
 ![Python](https://img.shields.io/badge/Python-3.11+-00ff99?style=flat-square&logo=python&logoColor=black)
 ![Platform](https://img.shields.io/badge/Platform-Linux-00ff99?style=flat-square&logo=linux&logoColor=black)

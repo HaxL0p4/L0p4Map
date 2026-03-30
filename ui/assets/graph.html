@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background-color: #0d0d0d; overflow: hidden; }
+  #graph { width: 100vw; height: 100vh; }
+</style>
+<link rel="stylesheet" href="vis-network.min.css">
+<script src="vis-network.min.js"></script>
+</head>
+<body>
+<div id="graph"></div>
+<script>
+  const options = {
+    nodes: {
+      shape: "dot",
+      size: 16,
+      font: { color: "#e0e0e0", face: "monospace", size: 12 },
+      borderWidth: 2,
+    },
+    edges: {
+      color: { color: "#333333", highlight: "#00ff99" },
+      width: 1,
+    },
+    physics: {
+      enabled: true,
+      stabilization: { iterations: 100 }
+    },
+    interaction: {
+      hover: true,
+      tooltipDelay: 100
+    }
+  };
+
+  let network = null;
+
+  function updateGraph(devicesJson) {
+    const devices = JSON.parse(devicesJson);
+    const nodes = new vis.DataSet();
+    const edges = new vis.DataSet();
+
+    let gatewayId = null;
+
+    devices.forEach((device, index) => {
+      const isGateway = device.ip.endsWith(".1");
+      const color = isGateway ? "#00ff99" : "#1a1a2e";
+      const borderColor = isGateway ? "#00ff99" : "#444444";
+      const size = isGateway ? 24 : 16;
+
+      nodes.add({
+        id: index,
+        label: device.ip + "\n" + device.hostname,
+        title: `IP: ${device.ip}\nMAC: ${device.mac}\nVendor: ${device.vendor}`,
+        color: {
+          background: color,
+          border: borderColor,
+          highlight: { background: "#00ff9933", border: "#00ff99" }
+        },
+        size: size,
+        font: { color: isGateway ? "#00ff99" : "#aaaaaa" }
+      });
+
+      if (isGateway) gatewayId = index;
+    });
+
+    if (gatewayId !== null) {
+      devices.forEach((_, index) => {
+        if (index !== gatewayId) {
+          edges.add({ from: gatewayId, to: index });
+        }
+      });
+    }
+
+    const container = document.getElementById("graph");
+    if (network) network.destroy();
+    network = new vis.Network(container, { nodes, edges }, options);
+  }
+</script>
+</body>
+</html>

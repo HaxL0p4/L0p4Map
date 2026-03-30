@@ -50,7 +50,7 @@ No bloat. No BS. Just raw network intelligence.
 
 ## Requirements
 
-- Linux (tested on Arch Linux)
+- Linux (Debian or Arch)
 - Python 3.11+
 - nmap installed (`sudo pacman -S nmap` or `sudo apt install nmap`)
 - Root privileges (required for ARP scanning)

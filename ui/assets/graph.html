@@ -6,77 +6,323 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background-color: #0d0d0d; overflow: hidden; }
   #graph { width: 100vw; height: 100vh; }
+
+  .vis-tooltip {
+    background-color: #111111 !important;
+    border: 1px solid #00ff9944 !important;
+    border-radius: 0 !important;
+    color: #e0e0e0 !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 11px !important;
+    padding: 10px 12px !important;
+    box-shadow: 0 0 12px #00ff9922 !important;
+  }
+
+  #legend {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    background: #111111;
+    border: 1px solid #1a1a1a;
+    padding: 10px 14px;
+    font-family: monospace;
+    font-size: 11px;
+    color: #555;
+    z-index: 100;
+    pointer-events: none;
+  }
+  #legend .item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  #legend .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px solid;
+    flex-shrink: 0;
+  }
+
+  #counter {
+    position: absolute;
+    top: 10px;
+    right: 16px;
+    font-family: monospace;
+    font-size: 11px;
+    color: #333;
+    pointer-events: none;
+  }
 </style>
 <link rel="stylesheet" href="vis-network.min.css">
 <script src="vis-network.min.js"></script>
 </head>
 <body>
 <div id="graph"></div>
+
+<div id="legend">
+  <div class="item"><div class="dot" style="border-color:#00ff99;background:#003322"></div> Gateway</div>
+  <div class="item"><div class="dot" style="border-color:#00ccff;background:#001a33"></div> Router</div>
+  <div class="item"><div class="dot" style="border-color:#ff9900;background:#332200"></div> Access Point</div>
+  <div class="item"><div class="dot" style="border-color:#5555ff;background:#1a1a2e"></div> PC / Workstation</div>
+  <div class="item"><div class="dot" style="border-color:#aaaaaa;background:#1a1a1a"></div> Apple Device</div>
+  <div class="item"><div class="dot" style="border-color:#ff5599;background:#2e1a2e"></div> Mobile</div>
+  <div class="item"><div class="dot" style="border-color:#cc0000;background:#2e0000"></div> Raspberry Pi</div>
+  <div class="item"><div class="dot" style="border-color:#9900ff;background:#1a0033"></div> Virtual Machine</div>
+  <div class="item"><div class="dot" style="border-color:#444444;background:#1a1a1a"></div> Unknown</div>
+</div>
+
+<div id="counter">// 0 devices</div>
+
 <script>
-  const options = {
-    nodes: {
-      shape: "dot",
-      size: 16,
-      font: { color: "#e0e0e0", face: "monospace", size: 12 },
-      borderWidth: 2,
-    },
-    edges: {
-      color: { color: "#333333", highlight: "#00ff99" },
-      width: 1,
-    },
-    physics: {
-      enabled: true,
-      stabilization: { iterations: 100 }
-    },
-    interaction: {
-      hover: true,
-      tooltipDelay: 100
-    }
+const VENDOR_ROLES = {
+  router:    ["cisco", "mikrotik", "ubiquiti", "openwrt", "dd-wrt", "juniper", "fortinet"],
+  ap:        ["tp-link", "netgear", "dlink", "linksys", "tenda", "zyxel", "aruba"],
+  pc:        ["intel", "dell", "lenovo", "hp", "acer", "gigabyte", "msi", "asrock", "asus"],
+  apple:     ["apple"],
+  mobile:    ["samsung", "xiaomi", "oneplus", "huawei", "oppo", "realme", "motorola"],
+  raspberry: ["raspberry"],
+  vm:        ["vmware", "virtualbox", "parallels", "proxmox"],
+};
+
+function getRole(device) {
+  const ip = device.ip || "";
+  const vendor = (device.vendor || "").toLowerCase();
+  const hostname = (device.hostname || "").toLowerCase();
+
+  // Gateway
+  if (
+    ip.endsWith(".1") ||
+    ip.endsWith(".254") ||
+    hostname === "router" ||
+    hostname === "gateway"
+  ) {
+    return "gateway";
+  }
+
+  // Router / AP 
+  if (hostname.includes("router")) return "router";
+  if (hostname.includes("ap") || hostname.includes("wifi")) return "ap";
+
+  // Router vendor
+  if (
+    vendor.includes("cisco") ||
+    vendor.includes("mikrotik") ||
+    vendor.includes("ubiquiti") ||
+    vendor.includes("juniper") ||
+    vendor.includes("fortinet")
+  ) {
+    return "router";
+  }
+
+  // AP vendor
+  if (
+    vendor.includes("tp-link") ||
+    vendor.includes("netgear") ||
+    vendor.includes("dlink") ||
+    vendor.includes("linksys") ||
+    vendor.includes("tenda") ||
+    vendor.includes("zyxel") ||
+    vendor.includes("aruba")
+  ) {
+    return "ap";
+  }
+
+  // apple
+  if (
+    vendor.includes("apple") ||
+    hostname.includes("iphone") ||
+    hostname.includes("ipad") ||
+    hostname.includes("macbook")
+  ) {
+    return "apple";
+  }
+
+  // mobilee
+  if (
+    vendor.includes("samsung") ||
+    vendor.includes("xiaomi") ||
+    vendor.includes("oneplus") ||
+    vendor.includes("huawei") ||
+    hostname.includes("android")
+  ) {
+    return "mobile";
+  }
+
+  // Raspberry
+  if (vendor.includes("raspberry")) return "raspberry";
+
+  // VM
+  if (
+    vendor.includes("vmware") ||
+    vendor.includes("virtualbox") ||
+    vendor.includes("proxmox")
+  ) {
+    return "vm";
+  }
+
+  // PC
+  if (
+    vendor.includes("intel") ||
+    vendor.includes("dell") ||
+    vendor.includes("hp") ||
+    vendor.includes("lenovo") ||
+    vendor.includes("asus") ||
+    hostname.includes("desktop") ||
+    hostname.includes("pc") ||
+    hostname.includes("linux") ||
+    hostname.includes("windows")
+  ) {
+    return "pc";
+  }
+
+  return "unknown";
+}
+
+function getRoleStyle(role) {
+  const styles = {
+    gateway:   { bg: "#003322", border: "#00ff99", size: 30, label: "GATEWAY" },
+    router:    { bg: "#001a33", border: "#00ccff", size: 24, label: "ROUTER" },
+    ap:        { bg: "#332200", border: "#ff9900", size: 22, label: "ACCESS POINT" },
+    pc:        { bg: "#1a1a2e", border: "#5555ff", size: 16, label: "PC" },
+    apple:     { bg: "#1a1a1a", border: "#aaaaaa", size: 16, label: "APPLE" },
+    mobile:    { bg: "#2e1a2e", border: "#ff5599", size: 14, label: "MOBILE" },
+    raspberry: { bg: "#2e0000", border: "#cc0000", size: 16, label: "RASPBERRY PI" },
+    vm:        { bg: "#1a0033", border: "#9900ff", size: 14, label: "VIRTUAL MACHINE" },
+    unknown:   { bg: "#1a1a1a", border: "#444444", size: 14, label: "UNKNOWN" },
   };
+  return styles[role] || styles.unknown;
+}
 
-  let network = null;
+function makeTooltip(role, device, style) {
+  const el = document.createElement("div");
+  el.innerHTML = `
+    <div style="color:${style.border};font-weight:bold;margin-bottom:6px;letter-spacing:1px">${style.label}</div>
+    <div style="color:#888;margin-bottom:2px">IP</div>
+    <div style="color:#e0e0e0;margin-bottom:6px">${device.ip}</div>
+    <div style="color:#888;margin-bottom:2px">MAC</div>
+    <div style="color:#e0e0e0;margin-bottom:6px">${device.mac}</div>
+    <div style="color:#888;margin-bottom:2px">VENDOR</div>
+    <div style="color:#e0e0e0;margin-bottom:6px">${device.vendor || "Unknown"}</div>
+    <div style="color:#888;margin-bottom:2px">HOSTNAME</div>
+    <div style="color:#e0e0e0">${device.hostname}</div>
+  `;
+  return el;
+}
 
-  function updateGraph(devicesJson) {
-    const devices = JSON.parse(devicesJson);
-    const nodes = new vis.DataSet();
-    const edges = new vis.DataSet();
+const options = {
+  nodes: {
+    shape: "dot",
+    font: { color: "#666666", face: "monospace", size: 10 },
+    borderWidth: 2,
+    shadow: { enabled: true, color: "rgba(0,0,0,0.5)", size: 8 },
+  },
+  edges: {
+    arrows: { to: { enabled: true, scaleFactor: 0.5, type: "arrow" } },
+    color: { color: "#1a1a1a", highlight: "#00ff99", hover: "#333333" },
+    width: 1,
+    smooth: { type: "curvedCW", roundness: 0.15 },
+    shadow: false,
+  },
+  physics: {
+    enabled: true,
+    solver: "forceAtlas2Based",
+    forceAtlas2Based: {
+      gravitationalConstant: -60,
+      centralGravity: 0.005,
+      springLength: 140,
+      springConstant: 0.06,
+      damping: 0.9,
+    },
+    stabilization: { iterations: 200, updateInterval: 25 }
+  },
+  interaction: {
+    hover: true,
+    tooltipDelay: 80,
+    zoomView: true,
+    dragView: true,
+  }
+};
 
-    let gatewayId = null;
+let network = null;
 
-    devices.forEach((device, index) => {
-      const isGateway = device.ip.endsWith(".1");
-      const color = isGateway ? "#00ff99" : "#1a1a2e";
-      const borderColor = isGateway ? "#00ff99" : "#444444";
-      const size = isGateway ? 24 : 16;
+function updateGraph(devicesJson) {
+  const devices = JSON.parse(devicesJson);
+  const nodes = new vis.DataSet();
+  const edges = new vis.DataSet();
 
-      nodes.add({
-        id: index,
-        label: device.ip + "\n" + device.hostname,
-        title: `IP: ${device.ip}\nMAC: ${device.mac}\nVendor: ${device.vendor}`,
-        color: {
-          background: color,
-          border: borderColor,
-          highlight: { background: "#00ff9933", border: "#00ff99" }
-        },
-        size: size,
-        font: { color: isGateway ? "#00ff99" : "#aaaaaa" }
-      });
+  let gatewayId = null;
 
-      if (isGateway) gatewayId = index;
+  const internetTooltip = document.createElement("div");
+  internetTooltip.innerHTML = `<div style="color:#555;font-weight:bold">INTERNET</div><div style="color:#333;font-size:10px;margin-top:4px">External network</div>`;
+
+  nodes.add({
+    id: "internet",
+    label: "INTERNET",
+    shape: "dot",
+    size: 18,
+    color: { background: "#0d0d0d", border: "#222222", highlight: { background: "#111", border: "#333" } },
+    font: { color: "#333333", size: 10 },
+    title: internetTooltip,
+  });
+
+  devices.forEach((device, index) => {
+    const role = getRole(device);
+    const style = getRoleStyle(role);
+    const hostname = (device.hostname && device.hostname !== device.ip) ? device.hostname : "";
+
+    if (role === "gateway") gatewayId = index;
+
+    nodes.add({
+      id: index,
+      label: device.ip + (hostname ? "\n" + hostname : ""),
+      title: makeTooltip(role, device, style),
+      color: {
+        background: style.bg,
+        border: style.border,
+        highlight: { background: style.bg, border: "#00ff99" },
+        hover: { background: style.bg, border: style.border }
+      },
+      size: style.size,
+      font: {
+        color: role === "gateway" ? "#00ff99" : "#555555",
+        size: 10,
+        bold: role === "gateway"
+      }
+    });
+  });
+
+  if (gatewayId !== null) {
+    edges.add({
+      from: gatewayId,
+      to: "internet",
+      dashes: [4, 4],
+      color: { color: "#222222", highlight: "#444444" },
+      arrows: { to: { enabled: true, scaleFactor: 0.4 } },
+      width: 1,
     });
 
-    if (gatewayId !== null) {
-      devices.forEach((_, index) => {
-        if (index !== gatewayId) {
-          edges.add({ from: gatewayId, to: index });
-        }
-      });
-    }
-
-    const container = document.getElementById("graph");
-    if (network) network.destroy();
-    network = new vis.Network(container, { nodes, edges }, options);
+    devices.forEach((_, index) => {
+      if (index !== gatewayId) {
+        edges.add({
+          from: index,
+          to: gatewayId,
+          arrows: { to: { enabled: true, scaleFactor: 0.4 } },
+          color: { color: "#1a1a1a", highlight: "#00ff9944" },
+          width: 1,
+        });
+      }
+    });
   }
+
+  document.getElementById("counter").textContent = `// ${devices.length} device${devices.length !== 1 ? "s" : ""}`;
+
+  const container = document.getElementById("graph");
+  if (network) network.destroy();
+  network = new vis.Network(container, { nodes, edges }, options);
+
+}
 </script>
 </body>
 </html>

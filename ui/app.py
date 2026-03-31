@@ -513,14 +513,21 @@ class MainWindow(QMainWindow):
         # web engine view con vis.js
         self.graph_view = QWebEngineView()
         self.graph_view.setStyleSheet("background-color: #0d0d0d;")
+        self.graph_ready = False
 
         html_path = os.path.join(
             os.path.dirname(__file__), "assets", "graph.html"
         )
         self.graph_view.load(QUrl.fromLocalFile(html_path))
+        self.graph_view.loadFinished.connect(self._on_graph_loaded)
         layout.addWidget(self.graph_view, stretch=1)
-
         return page
+
+    def _on_graph_loaded(self, ok):
+        self.graph_ready = True
+        if hasattr(self, '_pending_graph_data'):
+            self._update_graph(self._pending_graph_data)
+        
 
     def _build_table(self):
         self.table = QTableWidget()
@@ -623,6 +630,13 @@ class MainWindow(QMainWindow):
         self.detail_hostname.setText(f"HOSTNAME: {hostname}")
 
         for btn in [self.btn_ping, self.btn_portscan, self.btn_traceroute]:
+            btn.setStyleSheet("""
+                    QPushButton:hover { 
+                              color: #00ff99; 
+                              font-size: 14px; 
+                    } 
+                    QPushButton:pressed { font-size: 11px; }
+            """)
             btn.setEnabled(True)
 
     def _start_scan(self):
@@ -655,7 +669,11 @@ class MainWindow(QMainWindow):
     def _update_graph(self, hosts):
         if not hasattr(self, 'graph_view'):
             return
+        if not self.graph_ready:
+            self._pending_graph_data = hosts
+            return
         data = json.dumps(hosts)
+        data = data.replace("'", "\\'")
         self.graph_view.page().runJavaScript(f"updateGraph('{data}')")
 
     def _go_to_scan(self):
@@ -718,7 +736,8 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     check_root()
-    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--no-sandbox"
+    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--no-sandbox --disable-gpu --disable-software-rasterizer"
+    os.environ["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()

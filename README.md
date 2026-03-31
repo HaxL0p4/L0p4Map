@@ -46,6 +46,9 @@ No bloat. No BS. Just raw network intelligence.
 ### Port Scan — Full nmap Integration
 ![Port Scan](img/lopamap2.png)
 
+### Network Topology — Interactive network topology graph
+![Network Topology Graph](img/retepng.png)
+
 ---
 
 ## Requirements

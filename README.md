@@ -36,6 +36,13 @@ No bloat. No BS. Just raw network intelligence.
 - **Dark Professional UI** — built with PyQt6, designed for researchers
 - **Network Graph** — interactive topology visualization 
 
+## 🚧 Upcoming Features
+
+- **Interface Selection** — choose which network interface to operate on
+- **Custom Node Labels** — assign custom names to devices directly from the graph
+- **Graph Persistence** — save and reload network topologies
+- ** Change Detection** — highlight new or disappearing devices on the network
+
 ---
 
 ## Screenshots

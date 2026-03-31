@@ -11,7 +11,7 @@
 
 Professional network monitoring & visualization tool built for security researchers.
 
-![L0p4Map Home](img/L0p4map.gif)
+![L0p4Map Home](img/Lopamap.gif)
 
 </div>
 

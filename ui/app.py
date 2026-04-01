@@ -4,7 +4,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QSplitter,
     QLabel, QPushButton, QTableWidget,
     QTableWidgetItem, QHeaderView, QTextEdit,
-    QComboBox, QStackedWidget, QCheckBox, QLineEdit, QScrollArea
+    QComboBox, QStackedWidget, QCheckBox, QLineEdit, QScrollArea,
+    QFileDialog
 )
 
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -454,9 +455,32 @@ class MainWindow(QMainWindow):
         self.btn_run_scan.clicked.connect(self._run_nmap_scan)
         layout.addWidget(self.btn_run_scan)
 
+        self.btn_export_scan = QPushButton("[ EXPORT SCAN ]")
+        self.btn_export_scan.setStyleSheet("QPushButton:pressed {font-size: 12px;}")
+        self.btn_export_scan.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        contenuto_output = self.output_box.toPlainText()
+        self.btn_export_scan.setDisabled(True)
+        self.btn_export_scan.clicked.connect(self._export_scan)
+
+        layout.addSpacing(10)
+        layout.addWidget(self.btn_export_scan)
+
         layout.addStretch()
         scroll.setWidget(container)
         return scroll
+    
+    def _export_scan(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export L0p4Map scan",
+            "scan.txt",
+            "Text Files (*.txt);;All Files(*)"
+        )
+        if not path:
+            return
+
+        with open(path,"w") as f:
+            f.write(self.scan_output.toPlainText())
 
     def _build_scan_output(self):
         container = QWidget()
@@ -532,12 +556,14 @@ class MainWindow(QMainWindow):
             self.action_worker.finished.disconnect()
             self.action_worker.terminate()
         self.scan_output.append("\n// Interrupted.")
+        self.btn_export_scan.setDisabled(True)
         self.btn_run_scan.setText("[ RUN SCAN ]")
         self.btn_run_scan.clicked.disconnect()
         self.btn_run_scan.clicked.connect(self._run_nmap_scan)
 
     def _on_nmap_finished(self):
         self.scan_output.append("\n// Done.")
+        self.btn_export_scan.setDisabled(False)
         self.btn_run_scan.setText("[ RUN SCAN ]")
         self.btn_run_scan.clicked.disconnect()
         self.btn_run_scan.clicked.connect(self._run_nmap_scan)

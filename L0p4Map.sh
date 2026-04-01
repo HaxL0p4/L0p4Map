@@ -29,13 +29,14 @@ fi
 cd "$REPO_DIR" || exit 1
 
 git fetch origin "$BRANCH" >/dev/null 2>&1
-LOCAL=$(git rev-parse "$BRANCH")
+LOCAL=$(git rev-parse HEAD)
 REMOTE=$(git rev-parse "origin/$BRANCH")
 
 if [ "$LOCAL" != "$REMOTE" ]; then
-    echo "Updating..."
+    echo "Update found, pulling latest changes..."
     git pull origin "$BRANCH" >/dev/null 2>&1
-    echo "Updated!"
+    echo "Done! Please restart the script to apply the updates: $0"
+    exit 0
 fi
 
 sudo python3 ui/app.py

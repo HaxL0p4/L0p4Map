@@ -17,7 +17,7 @@ import subprocess
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from core.scanner import scan_network, get_local_subnet, check_root
+from core.scanner import scan_network, get_local_subnet, check_root, get_network_interfaces
 
 
 class ActionWorker(QThread):
@@ -200,6 +200,32 @@ class MainWindow(QMainWindow):
         self.subnet_label = QLabel("subnet detection...")
         self.subnet_label.setObjectName("subnet_label")
 
+        self.iface_selector = QComboBox()
+        self.iface_selector.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.iface_selector.setStyleSheet("""
+                QComboBox {
+                    background-color: #111111;
+                    color: #aaaaaa;
+                    border: 1px solid #222222;
+                    padding: 4px 10px;
+                    font-size: 11px;                          
+                }
+                QComboBox:hover {
+                    border-color: #00f999;
+                    color: #00ff99;                          
+                }
+                QComboBox QAbstractItemView {
+                    background-color: #111111;
+                    color: #aaaaaa;
+                    selection-background-color: #00ff99;
+                    selection-color: #00ff99;
+                    border: 1px solid #1a1a1a;                         
+                }
+        """)
+        
+        self._load_interfaces()
+        self.iface_selector.currentIndexChanged.connect(self._on_iface_changed)
+
         self.scan_button = QPushButton("[ SCAN ]")
         self.scan_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.scan_button.clicked.connect(self._start_scan)
@@ -207,10 +233,29 @@ class MainWindow(QMainWindow):
         layout.addWidget(title)
         layout.addSpacing(16)
         layout.addWidget(self.subnet_label)
+        layout.addSpacing(12)
+        layout.addWidget(self.iface_selector)
         layout.addStretch()
         layout.addWidget(self.scan_button)
 
         return toolbar
+    
+    def _load_interfaces(self):
+        interfaces = get_network_interfaces()
+        self.interfaces = interfaces
+
+        self.iface_selector.blockSignals(True)
+        self.iface_selector.clear()
+
+        for iface in interfaces:
+            self.iface_selector.addItem(f"{iface['name']} {iface['ip']}", userData=iface)
+
+        self.iface_selector.blockSignals(False)
+
+    def _on_iface_changed(self,index):
+        iface = self.iface_selector.itemData(index)
+        if iface:
+            self.subnet_label.setText(f"subnet: {iface['ip']}")
 
     def _build_home_page(self):
         home = QWidget()
@@ -644,7 +689,8 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Scanning...")
         self.table.setRowCount(0)
 
-        subnet = get_local_subnet()
+        iface = self.iface_selector.currentData()
+        subnet = get_local_subnet(iface["name"])
         self.subnet_label.setText(f"subnet: {subnet}")
 
         self.worker = ScanWorker(subnet)

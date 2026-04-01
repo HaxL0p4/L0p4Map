@@ -19,7 +19,7 @@ def get_network_interfaces():
         ip = None
         for addr in addr_list:
             if addr.family == socket.AF_INET:
-                ip = ip.address
+                ip = addr.address
 
         if not ip or ip.startswith("127."):
             continue
@@ -36,27 +36,39 @@ def check_root():
             "Execute the program with SUDO!"
         )
 
-def get_local_subnet() -> str:
+def get_local_subnet(iface_name=None) -> str:
     interfaces = psutil.net_if_addrs()
     stats = psutil.net_if_stats()
+
+    if iface_name:
+        if iface_name not in interfaces:
+            raise RuntimeError(f"Interface '{iface_name}' not found.")
+        if not stats[iface_name].isup:
+            raise RuntimeError(f"Interface '{iface_name}' not active.")
+        for addr in interfaces[iface_name]:
+            if addr.family == socket.AF_INET:
+                rete = ipaddress.IPv4Network(
+                    f"{addr.address}/{addr.netmask}",
+                    strict=False
+                )
+                return str(rete)
+        raise RuntimeError(f"Nessun indirizzo IPv4 su '{iface_name}'.")
 
     for nome_interfaccia, indirizzi in interfaces.items():
         if not stats[nome_interfaccia].isup:
             continue
-
         for addr in indirizzi:
             if addr.family == socket.AF_INET:
-                ip = addr.address 
-                netmask = addr.netmask 
-
+                ip = addr.address
+                netmask = addr.netmask
                 if ip.startswith("127."):
                     continue
-
                 rete = ipaddress.IPv4Network(
                     f"{ip}/{netmask}",
                     strict=False
                 )
                 return str(rete)
+
     raise RuntimeError("Nessuna interfaccia di rete attiva trovata...")
 
 

@@ -35,7 +35,8 @@ No bloat. No BS. Just raw network intelligence.
 - **Traceroute** — ICMP-based with real-time output
 - **Dark Professional UI** — built with PyQt6, designed for researchers
 - **Network Graph** — interactive topology visualization
-- **Interface Selection** — choose which network interface to operate on (NEW!)
+- **Interface Selection** — choose which network interface to operate on (*NEW!*)
+- **Scan Export** - save full nmap output to .txt file via native file manager dialog (*NEW!*)
 
 ## 🚧 Upcoming Features
 

@@ -12,7 +12,7 @@ from PyQt6.QtCore import QUrl
 import json
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtGui import QFont, QColor, QIcon
 import subprocess
 import sys
 import os
@@ -57,6 +57,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("L0p4Map")
         self.setMinimumSize(1200, 700)
+
+        icon_path = os.path.join(os.path.dirname(__file__), "assets", "logo.png")
+        self.setWindowIcon(QIcon(icon_path))
+
         self._apply_theme()
         self._build_ui()
 

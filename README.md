@@ -42,6 +42,7 @@ No bloat. No BS. Just raw network intelligence.
 - **Custom Node Labels** — assign custom names to devices directly from the graph
 - **Graph Persistence** — save and reload network topologies
 - **Change Detection** — highlight new or disappearing devices on the network
+- **Graph Export** — export the network topology graph
 
 ---
 

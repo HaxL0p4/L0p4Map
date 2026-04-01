@@ -34,11 +34,11 @@ No bloat. No BS. Just raw network intelligence.
 - **Vulnerability Detection** — CVE lookup via vulners, vuln scripts, malware detection
 - **Traceroute** — ICMP-based with real-time output
 - **Dark Professional UI** — built with PyQt6, designed for researchers
-- **Network Graph** — interactive topology visualization 
+- **Network Graph** — interactive topology visualization
+- **Interface Selection** — choose which network interface to operate on (NEW!)
 
 ## 🚧 Upcoming Features
 
-- **Interface Selection** — choose which network interface to operate on
 - **Custom Node Labels** — assign custom names to devices directly from the graph
 - **Graph Persistence** — save and reload network topologies
 - **Change Detection** — highlight new or disappearing devices on the network

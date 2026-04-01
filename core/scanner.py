@@ -6,6 +6,30 @@ from scapy.all import ARP, Ether, srp
 import os 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+def get_network_interfaces():
+    interfaces = []
+
+    addrs = psutil.net_if_addrs()
+    stats = psutil.net_if_stats()
+
+    for iface, addr_list in addrs.items():
+        if iface not in stats or not stats[iface].isup:
+            continue
+
+        ip = None
+        for addr in addr_list:
+            if addr.family == socket.AF_INET:
+                ip = ip.address
+
+        if not ip or ip.startswith("127."):
+            continue
+
+        interfaces.append({
+            "name":iface,
+            "ip":ip
+        })
+        return interfaces
+
 def check_root():
     if os.getuid() != 0:
         raise PermissionError(

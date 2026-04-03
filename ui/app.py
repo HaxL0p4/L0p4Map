@@ -56,7 +56,7 @@ class ScanWorker(QThread):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Test Title")
+        self.setWindowTitle("L0p4Map")
         self.setMinimumSize(1200, 700)
 
         icon_path = os.path.join(os.path.dirname(__file__), "assets", "logo.png")

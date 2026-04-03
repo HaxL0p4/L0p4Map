@@ -4,7 +4,6 @@
 **Nmap was blind. L0p4Map sees.**
 
 ![Python](https://img.shields.io/badge/Python-3.11+-00ff99?style=flat-square&logo=python&logoColor=black)
-![Stars](https://img.shields.io/github/stars/HaxL0p4/L0p4Map?style=flat-square)
 ![Platform](https://img.shields.io/badge/Platform-Linux-00ff99?style=flat-square&logo=linux&logoColor=black)
 ![License](https://img.shields.io/badge/License-GPL--v3-00ff99?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-Active%20Development-orange?style=flat-square)

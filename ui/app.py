@@ -924,7 +924,7 @@ class MainWindow(QMainWindow):
                     letter-spacing: 1px;
                 }
                 QPushButton:hover {
-                    background-color: #1a1a2e;
+                    font-size: 14px;
                 }
                 QPushButton:pressed {
                     font-size: 11px;

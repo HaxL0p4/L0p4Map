@@ -3,6 +3,7 @@ REPO_DIR="$(pwd)"
 BRANCH="main"
 
 if ! command -v nmap >/dev/null 2>&1; then
+    echo "Installing nmap..."
     if command -v apt >/dev/null 2>&1; then
         sudo apt update -qq
         sudo apt install -y -qq nmap
@@ -20,6 +21,18 @@ if ! python3 -c "from PyQt6.QtWebEngineWidgets import QWebEngineView" >/dev/null
         sudo pacman -Sy --noconfirm --noprogressbar python-pyqt6-webengine >/dev/null
     elif command -v apt >/dev/null 2>&1; then
         sudo apt install -y -qq python3-pyqt6.qtwebengine
+    else
+        echo "Package manager not yet supported."
+        exit 1
+    fi
+fi
+
+if ! python3 -c "from PyQt6.QtSvg import QSvgWidget" >/dev/null 2>&1; then
+    echo "Installing PyQt6-Qt6Svg..."
+    if command -v pacman >/dev/null 2>&1; then
+        sudo pacman -Sy --noconfirm --noprogressbar python-pyqt6 >/dev/null
+    elif command -v apt >/dev/null 2>&1; then
+        sudo apt install -y -qq python3-pyqt6.qtsvg
     else
         echo "Package manager not yet supported."
         exit 1

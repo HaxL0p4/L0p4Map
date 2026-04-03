@@ -26,7 +26,7 @@ No bloat. No BS. Just raw network intelligence.
 
 ## Features
 
-- **ARP Network Scan** — fast host discovery with parallel MAC vendor lookup
+- **ARP Network Scan** — fast host discovery with local IEEE OUI database lookup and API fallback
 - **Hostname Resolution** — multi-method detection via reverse DNS, NetBIOS (Windows devices) and mDNS/Avahi (Linux, Mac, IoT)
 - **Full nmap Integration** — SYN scan, UDP, OS detection, service version, NSE scripts
 - **Banner Grabbing** — HTTP, SMB, FTP, SSH, SSL enumeration

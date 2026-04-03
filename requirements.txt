@@ -3,3 +3,4 @@ requests
 psutil
 PyQt6
 PyQt6-WebEngine
+PyQt6-Qt6Svg

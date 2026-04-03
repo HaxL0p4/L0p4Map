@@ -182,7 +182,7 @@ class MainWindow(QMainWindow):
             icon_path = os.path.join(assets, icon_file)
             btn = QPushButton()
             btn.setIcon(load_colored_svg(icon_path, "#666666", size=22))
-            btn.setIconSize(QSize(22, 22))
+            btn.setIconSize(QSize(20, 20))
             btn.setToolTip(tooltip)
             btn.setFixedSize(48, 48)
             btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -328,7 +328,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._build_scan_output(), stretch=1)
 
         self.scan_button.clicked.connect(
-            lambda: self.stack.setCurrentIndex(0)
+            lambda: (self.stack.setCurrentIndex(0), self._set_active_nav(0)) 
         )
 
         return page
@@ -705,6 +705,9 @@ class MainWindow(QMainWindow):
                 color: #00ff99;
                 border-color: #00ff99;
             }
+            QPushButton:focus {
+                outline: 0;
+            }
         """)
         header_layout.addWidget(self.btn_live)
         layout.addWidget(header)
@@ -912,11 +915,20 @@ class MainWindow(QMainWindow):
 
         for btn in [self.btn_ping, self.btn_portscan, self.btn_traceroute]:
             btn.setStyleSheet("""
-                    QPushButton:hover { 
-                              color: #00ff99; 
-                              font-size: 14px; 
-                    } 
-                    QPushButton:pressed { font-size: 11px; }
+                QPushButton {
+                    
+                    color: #00ff99;
+                    border: 1px solid #00ff99;
+                    padding: 6px 18px;
+                    font-weight: bold;
+                    letter-spacing: 1px;
+                }
+                QPushButton:hover {
+                    background-color: #1a1a2e;
+                }
+                QPushButton:pressed {
+                    font-size: 11px;
+                }
             """)
             btn.setEnabled(True)
 

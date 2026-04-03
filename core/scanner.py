@@ -149,7 +149,7 @@ def resolve_hostname(ip: str) -> str:
 
 def scan_network(subnet: str) -> list[dict]:
     pacchetto = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=subnet)
-    risposte, _ = srp(pacchetto, timeout=1, retry=1, verbose=False)
+    risposte, _ = srp(pacchetto, timeout=2, retry=2, inter=0.01 ,verbose=False)
 
     seen_macs = {}
     for _, risposta in risposte:

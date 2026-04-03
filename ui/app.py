@@ -17,6 +17,7 @@ from PyQt6.QtGui import QFont, QColor, QIcon
 import subprocess
 import sys
 import os
+import csv
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from core.scanner import scan_network, get_local_subnet, check_root, get_network_interfaces
 
@@ -56,7 +57,7 @@ class ScanWorker(QThread):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("L0p4Map")
+        self.setWindowTitle("Test Title")
         self.setMinimumSize(1200, 700)
 
         icon_path = os.path.join(os.path.dirname(__file__), "assets", "logo.png")
@@ -596,7 +597,76 @@ class MainWindow(QMainWindow):
         self.graph_view.load(QUrl.fromLocalFile(html_path))
         self.graph_view.loadFinished.connect(self._on_graph_loaded)
         layout.addWidget(self.graph_view, stretch=1)
+
+        self.btn_export_graph = QComboBox(self.graph_view)
+        self.btn_export_graph.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_export_graph.addItem("EXPORT")
+        self.btn_export_graph.addItem("CSV", userData="csv")
+        self.btn_export_graph.addItem("PNG", userData="png")
+        self.btn_export_graph.setFixedWidth(120)
+        self.btn_export_graph.setStyleSheet("""
+                QComboBox {
+                    background-color: #111111;
+                    color: #aaaaaa;
+                    border: 1px solid #222222;
+                    padding: 2px 8px;
+                    font-size: 11px;                            
+                }
+                QComboBox:hover {
+                    border-color: #00ff99;
+                    color: #00ff99;                            
+                }
+                QComboBox QAbstractItemView {
+                    background-color: #111111;
+                    color: #aaaaaa;
+                    selection-background-color: #00ff22;
+                    selection-color: #00ff99;
+                    border: 1px solid #1a1a1a;                            
+                }
+        """)
+        self.btn_export_graph.currentIndexChanged.connect(self._export_graph)
+        self.btn_export_graph.move(8,8)
+        self.btn_export_graph.raise_()
+        self.btn_export_graph.setDisabled(True)
+
+
         return page
+    
+    def _export_graph(self, index):
+        if index == 0:
+            return
+    
+        fmt = self.btn_export_graph.itemData(index)
+        if not hasattr(self, 'last_hosts') or not self.last_hosts:
+            self.statusBar().showMessage("No scan data to export.")
+            self.btn_export_graph.setCurrentIndex(0)
+            return
+
+        if fmt == "csv":
+            self._export_graph_csv()
+            pass
+        else:
+            #self._export_graph_png()
+            pass
+
+        self.btn_export_graph.setCurrentIndex(0)
+
+    def _export_graph_csv(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export csv graph",
+            "graph.csv",
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        if not path:
+            return
+
+        with open(path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=["ip","mac","vendor","hostname"])
+            writer.writeheader()
+            writer.writerows(self.last_hosts)
+            
+        self.statusBar().showMessage(f"Graph (csv) exported in {path}")
 
     def _on_graph_loaded(self, ok):
         self.graph_ready = True
@@ -716,6 +786,7 @@ class MainWindow(QMainWindow):
 
     def _start_scan(self):
         self.scan_button.setEnabled(False)
+        self.btn_export_graph.setEnabled(False)
         self.statusBar().showMessage("Scanning...")
         self.table.setRowCount(0)
 
@@ -738,9 +809,11 @@ class MainWindow(QMainWindow):
 
     def _on_scan_finished(self, hosts):
         self._populate_table(hosts)
+        self.last_hosts = hosts
         self.statusBar().showMessage(f"{len(hosts)} device found.")
         self.scan_button.setEnabled(True)
         self._update_graph(hosts)
+        self.btn_export_graph.setDisabled(False)
 
     def _update_graph(self, hosts):
         if not hasattr(self, 'graph_view'):

@@ -12,7 +12,7 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtCore import QUrl
 import json
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt6.QtGui import QFont, QColor, QIcon
 import subprocess
 import sys
@@ -65,6 +65,9 @@ class MainWindow(QMainWindow):
 
         self._apply_theme()
         self._build_ui()
+
+        self.live_timer = QTimer()
+        self.live_timer.timeout.connect(self._live_scan)
 
     def _apply_theme(self):
         self.setStyleSheet("""
@@ -575,30 +578,19 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0,0,0,0)
         layout.setSpacing(0)
 
-        header = QLabel("// Network topology graph")
+        header = QWidget()
         header.setFixedHeight(36)
-        header.setStyleSheet("""
-                background-color: #080808;
-                color: #444444;
-                font-size: 11px;
-                padding: 0px 12px;
-                border-bottom: 1px solid #1a1a1a;
-        """)
-        layout.addWidget(header)
+        header.setStyleSheet("background-color: #080808; border-bottom: 1px solid #1a1a1a;")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(12,0,12,0)
 
-        # web engine view con vis.js
-        self.graph_view = QWebEngineView()
-        self.graph_view.setStyleSheet("background-color: #0d0d0d;")
-        self.graph_ready = False
+        header_label = QLabel("// network topology graph")
+        header_label.setStyleSheet("color: #444444; font-size: 11px; padding-right: 10px; padding-left: 10px; padin")
+        header_layout.addWidget(header_label)
+        #header_layout.addStretch()
+        header_layout.addSpacing(10)
 
-        html_path = os.path.join(
-            os.path.dirname(__file__), "assets", "graph.html"
-        )
-        self.graph_view.load(QUrl.fromLocalFile(html_path))
-        self.graph_view.loadFinished.connect(self._on_graph_loaded)
-        layout.addWidget(self.graph_view, stretch=1)
-
-        self.btn_export_graph = QComboBox(self.graph_view)
+        self.btn_export_graph = QComboBox()
         self.btn_export_graph.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.btn_export_graph.addItem("EXPORT")
         self.btn_export_graph.addItem("CSV", userData="csv")
@@ -625,12 +617,105 @@ class MainWindow(QMainWindow):
                 }
         """)
         self.btn_export_graph.currentIndexChanged.connect(self._export_graph)
-        self.btn_export_graph.move(8,8)
-        self.btn_export_graph.raise_()
         self.btn_export_graph.setDisabled(True)
+        header_layout.addWidget(self.btn_export_graph)
+        header_layout.addStretch()
 
+        self.live_interval = QComboBox()
+        self.live_interval.addItem("30s", userData=30)
+        self.live_interval.addItem("60", userData=60)
+        self.live_interval.addItem("120", userData=120)
+        self.live_interval.setFixedWidth(70)
+        self.live_interval.setDisabled(True)
+        self.live_interval.setStyleSheet("""
+            QComboBox {
+                background-color: #111111;
+                color: #555555;
+                border: 1px solid #1a1a1a;
+                padding: 2px 6px;
+                font-size: 10px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #111111;
+                color: #aaaaaa;
+                selection-background-color: #00ff9922;
+                selection-color: #00ff99;
+            }
+        """)
+        header_layout.addWidget(self.live_interval)
+        header_layout.addSpacing(10)
+
+        self.btn_live = QPushButton("[ LIVE ]")
+        self.btn_live.setFixedWidth(80)
+        self.btn_live.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_live.setCheckable(True)
+        self.btn_live.clicked.connect(self._toggle_live)
+        self.btn_live.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #444444;
+                border: 1px solid #333333;
+                padding: 4px 10px;
+                font-size: 10px;
+                font-weight: bold;
+            }
+            QPushButton:checked {
+                background-color: #003322;
+                color: #00ff99;
+                border: 1px solid #00ff99;
+            }
+            QPushButton:hover {
+                color: #00ff99;
+                border-color: #00ff99;
+            }
+        """)
+        header_layout.addWidget(self.btn_live)
+        layout.addWidget(header)
+
+        # web engine view con vis.js
+        self.graph_view = QWebEngineView()
+        self.graph_view.setStyleSheet("background-color: #0d0d0d;")
+        self.graph_ready = False
+
+        html_path = os.path.join(
+            os.path.dirname(__file__), "assets", "graph.html"
+        )
+        self.graph_view.load(QUrl.fromLocalFile(html_path))
+        self.graph_view.loadFinished.connect(self._on_graph_loaded)
+        layout.addWidget(self.graph_view, stretch=1)
 
         return page
+    
+
+    def _toggle_live(self):
+        if self.btn_live.isChecked():
+            interval = self.live_interval.currentData() * 1000
+            self.live_timer.start(interval)
+            self.live_interval.setDisabled(False)
+            self.statusBar().showMessage(f"Live monitoring active — refresh every {self.live_interval.currentText()}")
+        else:
+            self.live_timer.stop()
+            self.live_interval.setDisabled(True)
+            self.statusBar().showMessage("Live Monitoring Stopped.")
+
+        
+    def _live_scan(self):
+        if hasattr(self, 'live_worker') and self.live_worker.isRunning():
+            return
+        
+        iface = self.iface_selector.currentData()
+        subnet = get_local_subnet(iface["name"])
+
+        self.live_worker = ScanWorker(subnet)
+        self.live_worker.finished.connect(self._on_live_scan_finished)
+        self.live_worker.start()
+
+    def _on_live_scan_finished(self, hosts):
+        self._update_graph(hosts)
+        self.last_hosts = hosts 
+        self.statusBar().showMessage(
+        f"Live update — {len(hosts)} devices — {self.live_interval.currentText()} refresh")
+
     
     def _export_graph(self, index):
         if index == 0:
@@ -669,7 +754,6 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Graph (csv) exported in {path}")
 
     def _export_graph_png(self):
-        self.btn_export_graph.lower()
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Export png Graph",
@@ -682,8 +766,6 @@ class MainWindow(QMainWindow):
         pixmap = self.graph_view.grab()
         pixmap.save(path, "PNG")
         self.statusBar().showMessage(f"Graph (png) exported to {path}")
-
-        self.btn_export_graph.raise_()
 
     def _on_graph_loaded(self, ok):
         self.graph_ready = True

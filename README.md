@@ -37,13 +37,13 @@ No bloat. No BS. Just raw network intelligence.
 - **Network Graph** — interactive topology visualization
 - **Interface Selection** — choose which network interface to operate on (**NEW!**)
 - **Scan Export** - save full nmap output to .txt file via native file manager dialog (**NEW!**)
+- **Graph Export** — export the network topology graph in CSV or PNG (**NEW!**)
 
 ## 🚧 Upcoming Features
 
 - **Custom Node Labels** — assign custom names to devices directly from the graph
 - **Graph Persistence** — save and reload network topologies
 - **Change Detection** — highlight new or disappearing devices on the network
-- **Graph Export** — export the network topology graph
 
 ---
 

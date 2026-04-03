@@ -40,7 +40,7 @@ def get_local_subnet(iface_name=None) -> str:
             if addr.family == socket.AF_INET:
                 return str(ipaddress.IPv4Network(
                     f"{addr.address}/{addr.netmask}", strict=False))
-        raise RuntimeError(f"Nessun indirizzo IPv4 su '{iface_name}'.")
+        raise RuntimeError(f"No IPv4 address on '{iface_name}'.")
     for nome, indirizzi in interfaces.items():
         if not stats[nome].isup:
             continue
@@ -51,7 +51,7 @@ def get_local_subnet(iface_name=None) -> str:
                     continue
                 return str(ipaddress.IPv4Network(
                     f"{ip}/{addr.netmask}", strict=False))
-    raise RuntimeError("Nessuna interfaccia attiva trovata.")
+    raise RuntimeError("No active interfaces found.")
 
 def get_vendor(mac: str) -> str:
     global _vendor_cache

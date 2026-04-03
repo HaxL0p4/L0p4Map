@@ -646,7 +646,7 @@ class MainWindow(QMainWindow):
             self._export_graph_csv()
             pass
         else:
-            #self._export_graph_png()
+            self._export_graph_png()
             pass
 
         self.btn_export_graph.setCurrentIndex(0)
@@ -667,6 +667,23 @@ class MainWindow(QMainWindow):
             writer.writerows(self.last_hosts)
             
         self.statusBar().showMessage(f"Graph (csv) exported in {path}")
+
+    def _export_graph_png(self):
+        self.btn_export_graph.lower()
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export png Graph",
+            "graph.png",
+            "PNG Images (*.png);;All Files(*)"
+        )
+        if not path:
+            return
+        
+        pixmap = self.graph_view.grab()
+        pixmap.save(path, "PNG")
+        self.statusBar().showMessage(f"Graph (png) exported to {path}")
+
+        self.btn_export_graph.raise_()
 
     def _on_graph_loaded(self, ok):
         self.graph_ready = True

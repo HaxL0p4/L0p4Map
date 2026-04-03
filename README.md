@@ -1,7 +1,6 @@
 <div align="center">
 
 # L0p4Map
-
 **Nmap was blind. L0p4Map sees.**
 
 ![Python](https://img.shields.io/badge/Python-3.11+-00ff99?style=flat-square&logo=python&logoColor=black)
@@ -34,10 +33,11 @@ No bloat. No BS. Just raw network intelligence.
 - **Vulnerability Detection** — CVE lookup via vulners, vuln scripts, malware detection
 - **Traceroute** — ICMP-based with real-time output
 - **Dark Professional UI** — built with PyQt6, designed for researchers
-- **Network Graph** — interactive topology visualization
-- **Interface Selection** — choose which network interface to operate on (**NEW!**)
-- **Scan Export** - save full nmap output to .txt file via native file manager dialog (**NEW!**)
-- **Graph Export** — export the network topology graph in CSV or PNG (**NEW!**)
+- **Network Graph** — interactive topology visualization via vis.js
+- **Interface Selection** — choose which network interface to scan on
+- **Scan Export** — save full nmap output to `.txt` via native file manager dialog
+- **Graph Export** — export the network topology as CSV or PNG
+- **Live Monitoring** — auto-refresh the network graph at configurable intervals (30s / 60s / 120s)
 
 ## 🚧 Upcoming Features
 
@@ -70,7 +70,6 @@ No bloat. No BS. Just raw network intelligence.
 ---
 
 ## Installation
-
 ```bash
 git clone https://github.com/HaxL0p4/L0p4Map.git
 cd L0p4Map
@@ -83,15 +82,17 @@ sudo chmod +x L0p4Map.sh
 ## Usage
 
 Launch the tool with root privileges:
-
 ```bash
 sudo ./L0p4Map.sh
 ```
 
-1. Press **[ SCAN ]** to discover all devices on your network
-2. Click a device to see details and run quick actions (ping, traceroute)
-3. Press **[ PORT SCAN ]** to open the full nmap scan interface
-4. Select scan options and press **[ RUN SCAN ]**
+1. Select the network interface from the toolbar dropdown
+2. Press **[ SCAN ]** to discover all devices on your network
+3. Click a device to see details and run quick actions (ping, traceroute)
+4. Press **[ PORT SCAN ]** to open the full nmap scan interface
+5. Select scan options and press **[ RUN SCAN ]** — export results with **[ EXPORT SCAN ]**
+6. Switch to the graph view to explore the network topology — export as CSV or PNG
+7. Enable **[ LIVE ]** to keep the graph updated automatically
 
 ---
 

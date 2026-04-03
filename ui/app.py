@@ -9,17 +9,29 @@ from PyQt6.QtWidgets import (
 )
 
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtCore import QUrl
 import json
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
-from PyQt6.QtGui import QFont, QColor, QIcon
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QUrl, QSize
+from PyQt6.QtGui import QFont, QColor, QIcon, QPixmap, QPainter
+from PyQt6.QtSvg import QSvgRenderer
 import subprocess
 import sys
 import os
 import csv
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from core.scanner import scan_network, get_local_subnet, check_root, get_network_interfaces
+
+def load_colored_svg(path, color, size=24):
+    renderer = QSvgRenderer(path)
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+    renderer.render(painter)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+    painter.fillRect(pixmap.rect(), QColor(color))
+    painter.end()
+    return QIcon(pixmap)
 
 
 class ActionWorker(QThread):
@@ -164,38 +176,62 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(4, 8, 4, 8)
         layout.setSpacing(4)
 
-        btn_home = QPushButton("⌂")
-        btn_home.setToolTip("Home")
-        btn_home.clicked.connect(lambda: self.stack.setCurrentIndex(0))
+        assets = os.path.join(os.path.dirname(__file__), "../img", "icons")
 
-        btn_scan = QPushButton("⚡")
-        btn_scan.setToolTip("Port Scan")
-        btn_scan.clicked.connect(lambda: self.stack.setCurrentIndex(1))
-
-        btn_graph = QPushButton("◈")
-        btn_graph.setToolTip("Network Graph")
-        btn_graph.clicked.connect(lambda: self.stack.setCurrentIndex(2))
-
-
-        for btn in [btn_home, btn_scan, btn_graph]:
+        def make_btn(icon_file, tooltip):
+            icon_path = os.path.join(assets, icon_file)
+            btn = QPushButton()
+            btn.setIcon(load_colored_svg(icon_path, "#666666", size=22))
+            btn.setIconSize(QSize(22, 22))
+            btn.setToolTip(tooltip)
             btn.setFixedSize(48, 48)
             btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             btn.setStyleSheet("""
                 QPushButton {
                     background-color: transparent;
                     border: none;
-                    color: #444444;
-                    font-size: 20px;
+                    border-radius: 0px;
                 }
                 QPushButton:hover {
-                    color: #00ff99;
                     background-color: #111111;
                 }
             """)
+            return btn, icon_path
+
+        btn_home,  path_home  = make_btn("home.svg",     "Home")
+        btn_scan,  path_scan  = make_btn("eye.svg", "Port Scan")
+        btn_graph, path_graph = make_btn("network2.svg",    "Network Graph")
+
+        self.nav_btns = [
+            (btn_home,  path_home),
+            (btn_scan,  path_scan),
+            (btn_graph, path_graph),
+        ]
+
+        def navigate(index):
+            self.stack.setCurrentIndex(index)
+            self._set_active_nav(index)
+
+        btn_home.clicked.connect(lambda: navigate(0))
+        btn_scan.clicked.connect(lambda: navigate(1))
+        btn_graph.clicked.connect(lambda: navigate(2))
+
+        for btn, path in self.nav_btns:
             layout.addWidget(btn)
+
+        self._set_active_nav(0)
 
         layout.addStretch()
         return sidebar
+    
+
+    def _active_nav_btn(self):
+        return self.nav_btns[self.stack.currentIndex()][0]
+
+    def _set_active_nav(self, index):
+        for i, (btn, path) in enumerate(self.nav_btns):
+            color = "#00ff99" if i == index else "#666666"
+            btn.setIcon(load_colored_svg(path, color))
 
     def _build_toolbar(self):
         toolbar = QWidget()
@@ -267,6 +303,7 @@ class MainWindow(QMainWindow):
             self.subnet_label.setText(f"subnet: {iface['ip']}")
 
     def _build_home_page(self):
+        
         home = QWidget()
         layout = QVBoxLayout(home)
         layout.setSpacing(0)

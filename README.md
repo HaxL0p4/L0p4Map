@@ -16,7 +16,7 @@ Professional network monitoring & visualization tool built for security research
 
 ---
 
-## What is L0p4Map?
+## What is L0p4Map? 👁️
 
 L0p4Map is a professional-grade network monitoring tool that combines the power of nmap with a clean, modern dark UI. Designed for security researchers and network administrators who need fast, detailed visibility into their infrastructure.
 

@@ -38,10 +38,11 @@ No bloat. No BS. Just raw network intelligence.
 - **Scan Export** — save full nmap output to `.txt` via native file manager dialog
 - **Graph Export** — export the network topology as CSV or PNG
 - **Live Monitoring** — auto-refresh the network graph at configurable intervals (30s / 60s / 120s)
+- **Traffic Analyzer page** — real-time network traffic inspection and analysis (*In Development*)
 
 ## 🚧 Upcoming Features
 
-- **Traffic Analyzer page** — real-time network traffic inspection and analysis
+- **Complete Traffic Analyzer page** — real-time network traffic inspection and analysis
 - **Custom Node Labels** — assign custom names to devices directly from the graph
 - **Graph Persistence** — save and reload network topologies
 - **Change Detection** — highlight new or disappearing devices on the network

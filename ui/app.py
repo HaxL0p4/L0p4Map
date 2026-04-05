@@ -262,8 +262,9 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.stack.addWidget(self._build_home_page())   
         self.stack.addWidget(self._build_scan_page())   
-        self.stack.addWidget(self._build_graph_page())  
+        self.stack.addWidget(self._build_graph_page())
         self.stack.addWidget(self._build_trafficAnalyzer_page())
+        self.stack.addWidget(self._build_attackSurface_page())
         body_layout.addWidget(self.stack, stretch=1)
 
         root_layout.addWidget(body, stretch=1)
@@ -310,12 +311,14 @@ class MainWindow(QMainWindow):
         btn_scan,  path_scan  = make_btn("eye.svg", "Port Scan")
         btn_graph, path_graph = make_btn("network2.svg",    "Network Graph")
         btn_traffic, path_traffic = make_btn("traffic.svg", "Traffic Analyzer")
+        btn_attack, path_attack = make_btn("attack.svg", "Attack Surface")
 
         self.nav_btns = [
             (btn_home,  path_home),
             (btn_scan,  path_scan),
             (btn_graph, path_graph),
-            (btn_traffic, path_traffic)
+            (btn_traffic, path_traffic),
+            (btn_attack, path_attack)
         ]
 
         def navigate(index):
@@ -326,6 +329,7 @@ class MainWindow(QMainWindow):
         btn_scan.clicked.connect(lambda: navigate(1))
         btn_graph.clicked.connect(lambda: navigate(2))
         btn_traffic.clicked.connect(lambda: navigate(3))
+        btn_attack.clicked.connect(lambda: navigate(4))
 
         for btn, path in self.nav_btns:
             layout.addWidget(btn)
@@ -1487,6 +1491,17 @@ class MainWindow(QMainWindow):
         self.btn_traceroute.clicked.disconnect()
         self.btn_traceroute.clicked.connect(self._run_traceroute)
 
+    # SEZIONE ATTACK SURFACE (In development)
+    def _build_attackSurface_page(self):
+        page = QWidget()
+        layout = QVBoxLayout()
+        page.setLayout(layout)
+
+        text = QLabel("// Section still in Development ;)")
+        text.setStyleSheet("color:  grey;")
+        layout.addWidget(text, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        return page
 
 if __name__ == "__main__":
     check_root()

@@ -59,6 +59,9 @@ No bloat. No BS. Just raw network intelligence.
 ### Network Topology — Interactive network topology graph
 ![Network Topology Graph](img/retepng.png)
 
+### Traffic Analyzer — Real-time network traffic analysis *(in development)*
+![Network Topology Graph](img/traffic.png)
+
 ---
 
 ## Requirements

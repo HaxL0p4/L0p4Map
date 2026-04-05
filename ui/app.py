@@ -5,14 +5,14 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QTableWidget,
     QTableWidgetItem, QHeaderView, QTextEdit,
     QComboBox, QStackedWidget, QCheckBox, QLineEdit, QScrollArea,
-    QFileDialog, QSplashScreen
+    QFileDialog, QSplashScreen, QMenu
 )
 
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 import json
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QUrl, QSize
-from PyQt6.QtGui import QFont, QColor, QIcon, QPixmap, QPainter
+from PyQt6.QtGui import QFont, QColor, QIcon, QPixmap, QPainter, QAction
 from PyQt6.QtSvg import QSvgRenderer
 import subprocess
 import sys
@@ -1242,6 +1242,8 @@ class MainWindow(QMainWindow):
 
     def _build_table(self):
         self.table = QTableWidget()
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_menu)
         self.table.setColumnCount(4)
         self.table.setHorizontalHeaderLabels(["IP", "MAC", "VENDOR", "HOSTNAME"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
@@ -1251,6 +1253,33 @@ class MainWindow(QMainWindow):
         self.table.itemSelectionChanged.connect(self._on_device_selected)
         self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         return self.table
+    
+    def _show_menu(self, pos):
+        item = self.table.itemAt(pos)
+
+        if item is None:
+            return
+        
+        row = item.row()
+        ip = self.table.item(row,0).text()
+
+        menu = QMenu()
+
+        portScan_action = QAction("Send to port scan", self)
+        ta_action = QAction("Send to Traffic Analyzer", self)
+        as_action = QAction("Send to Attack Surface (soon)", self)
+
+        portScan_action.triggered.connect(lambda: (self.stack.setCurrentIndex(1), self.scan_target.setText(ip)))
+        ta_action.triggered.connect(lambda: (self.stack.setCurrentIndex(3), self.ta_filter.setText(ip)))
+
+        as_action.setDisabled(True)
+
+        menu.addAction(portScan_action)
+        menu.addAction(ta_action)
+        menu.addAction(as_action)
+
+        menu.exec(self.table.viewport().mapToGlobal(pos))
+
 
     def _build_detail_panel(self):
         self.detail_panel = QWidget()

@@ -41,6 +41,7 @@ No bloat. No BS. Just raw network intelligence.
 
 ## 🚧 Upcoming Features
 
+- **Traffic Analyzer page** — real-time network traffic inspection and analysis
 - **Custom Node Labels** — assign custom names to devices directly from the graph
 - **Graph Persistence** — save and reload network topologies
 - **Change Detection** — highlight new or disappearing devices on the network

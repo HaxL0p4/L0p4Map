@@ -27,16 +27,19 @@ if ! python3 -c "from PyQt6.QtWebEngineWidgets import QWebEngineView" >/dev/null
     fi
 fi
 
-if ! python3 -c "from PyQt6.QtSvg import QSvgWidget" >/dev/null 2>&1; then
-    echo "Installing PyQt6-Qt6Svg..."
-    if command -v pacman >/dev/null 2>&1; then
+if command -v pacman >/dev/null 2>&1; then
+    if ! pacman -Qi python-pyqt6 >/dev/null 2>&1; then
+        echo "Installing PyQt6-Qt6Svg..."
         sudo pacman -Sy --noconfirm --noprogressbar python-pyqt6 >/dev/null
-    elif command -v apt >/dev/null 2>&1; then
-        sudo apt install -y -qq python3-pyqt6.qtsvg
-    else
-        echo "Package manager not yet supported."
-        exit 1
     fi
+elif command -v apt >/dev/null 2>&1; then
+    if ! dpkg -s python3-pyqt6.qtsvg >/dev/null 2>&1; then
+        echo "Installing PyQt6-Qt6Svg..."
+        sudo apt install -y -qq python3-pyqt6.qtsvg
+    fi
+else
+    echo "Package manager not yet supported."
+    exit 1
 fi
 
 cd "$REPO_DIR" || exit 1

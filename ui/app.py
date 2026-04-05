@@ -1497,7 +1497,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout()
         page.setLayout(layout)
 
-        text = QLabel("// Section still in Development ;)")
+        text = QLabel("// Coming Soon ;)")
         text.setStyleSheet("color:  grey;")
         layout.addWidget(text, alignment=Qt.AlignmentFlag.AlignCenter)
 

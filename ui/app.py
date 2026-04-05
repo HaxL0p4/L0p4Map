@@ -311,14 +311,14 @@ class MainWindow(QMainWindow):
         btn_scan,  path_scan  = make_btn("eye.svg", "Port Scan")
         btn_graph, path_graph = make_btn("network2.svg",    "Network Graph")
         btn_traffic, path_traffic = make_btn("traffic.svg", "Traffic Analyzer")
-        btn_attack, path_attack = make_btn("attack.svg", "Attack Surface")
+        #btn_attack, path_attack = make_btn("attack.svg", "Attack Surface")
 
         self.nav_btns = [
             (btn_home,  path_home),
             (btn_scan,  path_scan),
             (btn_graph, path_graph),
-            (btn_traffic, path_traffic),
-            (btn_attack, path_attack)
+            (btn_traffic, path_traffic)
+            #(btn_attack, path_attack)
         ]
 
         def navigate(index):
@@ -329,7 +329,7 @@ class MainWindow(QMainWindow):
         btn_scan.clicked.connect(lambda: navigate(1))
         btn_graph.clicked.connect(lambda: navigate(2))
         btn_traffic.clicked.connect(lambda: navigate(3))
-        btn_attack.clicked.connect(lambda: navigate(4))
+        #btn_attack.clicked.connect(lambda: navigate(4))
 
         for btn, path in self.nav_btns:
             layout.addWidget(btn)

@@ -18,8 +18,10 @@ import subprocess
 import sys
 import os
 import csv
+from scapy.all import ARP, Ether, srp, sniff, IP as ScapyIP, TCP,UDP, ICMP
+from collections import defaultdict
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from core.scanner import scan_network, get_local_subnet, check_root, get_network_interfaces
+from core.scanner import scan_network, get_local_subnet, check_root, get_network_interfaces, capture_traffic
 
 def load_colored_svg(path, color, size=24):
     renderer = QSvgRenderer(path)
@@ -65,6 +67,59 @@ class ScanWorker(QThread):
     def run(self):
         hosts = scan_network(self.subnet)
         self.finished.emit(hosts)
+
+
+class TrafficWorker(QThread):
+    packet_captured = pyqtSignal(dict)
+    finished = pyqtSignal()
+
+    def __init__(self, iface: str):
+        super().__init__()
+        self.iface = iface
+        self._running = True
+
+    def stop(self):
+        self._running = False
+
+    def run(self):
+        def process(pkt):
+            if not self._running:
+                return
+            if ScapyIP not in pkt:
+                return
+
+            src = pkt[ScapyIP].src
+            dst = pkt[ScapyIP].dst
+            size = len(pkt)
+            proto = "OTHER"
+            port = "-"
+
+            if TCP in pkt:
+                proto = "TCP"
+                port = str(pkt[TCP].dport)
+            elif UDP in pkt:
+                proto = "UDP"
+                port = str(pkt[UDP].dport)
+            elif ICMP in pkt:
+                proto = "ICMP"
+
+            self.packet_captured.emit({
+                "src": src,
+                "dst": dst,
+                "proto": proto,
+                "port": port,
+                "size": size
+            })
+
+        sniff(
+            iface=self.iface,
+            prn=process,
+            store=False,
+            filter="ip",
+            stop_filter=lambda _: not self._running
+        )
+        self.finished.emit()
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -818,21 +873,320 @@ class MainWindow(QMainWindow):
             self._update_graph(self._pending_graph_data)
 
         
+    def _start_ta_capture(self):
+        iface = self.iface_selector.currentData()
+        if not iface:
+            return
+
+        duration = self.ta_duration.currentData()
+        self.btn_start_capture.setText(f"[ CAPTURING {duration}s... ]")
+        self.btn_start_capture.setEnabled(False)
+        self.ta_status.setText(f"// capturing on {iface['name']} for {duration}s...")
+        self.ta_table.setRowCount(0)
+
+        self.ta_worker = TrafficWorker(iface["name"], duration=duration)
+        self.ta_worker.finished.connect(self._on_ta_captured)
+        self.ta_worker.start()
+
+    def _on_ta_captured(self, edges):
+        self.btn_start_capture.setText("[ START CAPTURE ]")
+        self.btn_start_capture.setEnabled(True)
+        self._ta_data = edges
+
+        if not edges:
+            self.ta_status.setText("// no traffic captured — try again.")
+            return
+
+        self._populate_ta_table(edges)
+        total_packets = sum(e["packets"] for e in edges)
+        total_bytes = sum(e["bytes"] for e in edges)
+        self.ta_status.setText(
+            f"// {len(edges)} connections — {total_packets} packets — {total_bytes} bytes"
+        )
+        self.btn_ta_export.setEnabled(True)
+
+        data = json.dumps(edges)
+        data = data.replace("'", "\\'")
+        self.graph_view.page().runJavaScript(f"updateEdges('{data}')")
+
+    def _populate_ta_table(self, edges):
+        self.ta_table.setRowCount(0)
+        for e in edges:
+            row = self.ta_table.rowCount()
+            self.ta_table.insertRow(row)
+            self.ta_table.setItem(row, 0, QTableWidgetItem(e["src"]))
+            self.ta_table.setItem(row, 1, QTableWidgetItem(e["dst"]))
+            self.ta_table.setItem(row, 2, QTableWidgetItem(e["proto"]))
+            self.ta_table.setItem(row, 3, QTableWidgetItem(e["port"]))
+            self.ta_table.setItem(row, 4, QTableWidgetItem(str(e["packets"])))
+            self.ta_table.setItem(row, 5, QTableWidgetItem(str(e["bytes"])))
+
+    def _filter_ta_table(self, text):
+        if not hasattr(self, '_ta_data'):
+            return
+        text = text.lower()
+        filtered = [
+            e for e in self._ta_data
+            if text in e["src"].lower()
+            or text in e["dst"].lower()
+            or text in e["proto"].lower()
+            or text in e["port"].lower()
+        ]
+        self._populate_ta_table(filtered)
+
+    def _ta_send_to_scan(self, item):
+        row = item.row()
+        ip = self.ta_table.item(row, 0).text()
+        self.scan_target.setText(ip)
+        self.stack.setCurrentIndex(1)
+        self._set_active_nav(1)
+
+    def _export_ta_csv(self):
+        if not hasattr(self, '_ta_data') or not self._ta_data:
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Traffic", "traffic.csv", "CSV Files (*.csv);;All Files (*)"
+        )
+        if not path:
+            return
+        with open(path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=["src","dst","proto","port","packets","bytes"])
+            writer.writeheader()
+            writer.writerows(self._ta_data)
+        self.statusBar().showMessage(f"Traffic exported to {path}")
+
+    # IN DEVELOPMENT
     def _build_trafficAnalyzer_page(self):
         page = QWidget()
-        layout = QVBoxLayout()
-        page.setLayout(layout)
+        layout = QVBoxLayout(page)
+        layout.setSpacing(0)
+        layout.setContentsMargins(0, 0, 0, 0)
 
-        text = QLabel("// Still in development :)")
-        text.setStyleSheet("color: grey;")
+        header = QWidget()
+        header.setFixedHeight(36)
+        header.setStyleSheet("background-color: #080808; border-bottom: 1px solid #1a1a1a;")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(12, 0, 12, 0)
 
-        textLayout = QHBoxLayout()
-        textLayout.addWidget(text, alignment=Qt.AlignmentFlag.AlignCenter)
+        header_label = QLabel("// traffic analyzer ( Still in development :) )")
+        header_label.setStyleSheet("color: #444444; font-size: 11px;")
+        header_layout.addWidget(header_label)
+        header_layout.addStretch()
 
-        layout.addLayout(textLayout)
+        self.btn_start_capture = QPushButton("[ START ]")
+        self.btn_start_capture.setFixedWidth(80)
+        self.btn_start_capture.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_start_capture.clicked.connect(self._ta_start)
+        self.btn_start_capture.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #00ccff;
+                border: 1px solid #00ccff;
+                padding: 4px 10px;
+                font-size: 10px;
+                font-weight: bold;
+                letter-spacing: 1px;
+            }
+            QPushButton:hover { background-color: #001a33; border-color: #00ccff; font-size: 11px;}
+            QPushButton:disabled { color: #333; border-color: #222; }
+        """)
+        header_layout.addWidget(self.btn_start_capture)
+        header_layout.addSpacing(6)
+
+        self.btn_stop_capture = QPushButton("[ STOP ]")
+        self.btn_stop_capture.setFixedWidth(80)
+        self.btn_stop_capture.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_stop_capture.setEnabled(False)
+        self.btn_stop_capture.clicked.connect(self._ta_stop)
+        self.btn_stop_capture.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #ff4444;
+                border: 1px solid #ff444444;
+                padding: 4px 10px;
+                font-size: 10px;
+                font-weight: bold;
+                letter-spacing: 1px;
+            }
+            QPushButton:hover { background-color: #330000; border-color: #ff4444; }
+            QPushButton:disabled { color: #333; border-color: #222; }
+        """)
+        header_layout.addWidget(self.btn_stop_capture)
+        header_layout.addSpacing(6)
+
+        self.btn_clear_capture = QPushButton("[ CLEAR ]")
+        self.btn_clear_capture.setFixedWidth(80)
+        self.btn_clear_capture.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_clear_capture.clicked.connect(self._ta_clear)
+        self.btn_clear_capture.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #666666;
+                border: 1px solid #333333;
+                padding: 4px 10px;
+                font-size: 10px;
+                font-weight: bold;
+                letter-spacing: 1px;
+            }
+            QPushButton:hover { color: #aaaaaa; border-color: #666666; }
+        """)
+        header_layout.addWidget(self.btn_clear_capture)
+        header_layout.addSpacing(6)
+
+        self.btn_ta_export = QPushButton("[ EXPORT CSV ]")
+        self.btn_ta_export.setFixedWidth(120)
+        self.btn_ta_export.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_ta_export.setEnabled(False)
+        self.btn_ta_export.clicked.connect(self._export_ta_csv)
+        self.btn_ta_export.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #00ff99;
+                border: 1px solid #00ff99;
+                padding: 4px 10px;
+                font-size: 10px;
+                font-weight: bold;
+                letter-spacing: 1px;
+            }
+            QPushButton:hover { background-color: #001a0d; border-color: #00ff99; }
+            QPushButton:disabled { color: #333; border-color: #222; }
+        """)
+        header_layout.addWidget(self.btn_ta_export)
+        header_layout.addSpacing(10)
+
+        layout.addWidget(header)
+
+        filter_bar = QWidget()
+        filter_bar.setFixedHeight(32)
+        filter_bar.setStyleSheet("background-color: #0a0a0a; border-bottom: 1px solid #111111;")
+        filter_layout = QHBoxLayout(filter_bar)
+        filter_layout.setContentsMargins(12, 0, 12, 0)
+
+        filter_label = QLabel("FILTER:")
+        filter_label.setStyleSheet("color: #444; font-size: 10px; letter-spacing: 1px;")
+        filter_layout.addWidget(filter_label)
+        filter_layout.addSpacing(8)
+
+        self.ta_filter = QLineEdit()
+        self.ta_filter.setPlaceholderText("IP, protocol or port...")
+        self.ta_filter.setStyleSheet("""
+            QLineEdit {
+                background-color: #0d0d0d;
+                color: #aaaaaa;
+                border: 1px solid #1a1a1a;
+                padding: 2px 8px;
+                font-size: 11px;
+                font-family: 'JetBrains Mono', monospace;
+            }
+        """)
+        self.ta_filter.textChanged.connect(self._filter_ta_table)
+        filter_layout.addWidget(self.ta_filter)
+        layout.addWidget(filter_bar)
+
+        self.ta_table = QTableWidget()
+        self.ta_table.setColumnCount(6)
+        self.ta_table.setHorizontalHeaderLabels(["SRC IP", "DST IP", "PROTOCOL", "PORT", "PACKETS", "BYTES"])
+        self.ta_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.ta_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.ta_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.ta_table.verticalHeader().setVisible(False)
+        self.ta_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.ta_table.itemDoubleClicked.connect(self._ta_send_to_scan)
+        layout.addWidget(self.ta_table, stretch=1)
+
+        self.ta_status = QLabel("// ready — press [ START ] to begin capture")
+        self.ta_status.setStyleSheet("""
+            background-color: #080808;
+            color: #333333;
+            font-size: 10px;
+            padding: 4px 12px;
+            border-top: 1px solid #1a1a1a;
+        """)
+        layout.addWidget(self.ta_status)
 
         return page
-        
+    
+
+    def _ta_start(self):
+        iface = self.iface_selector.currentData()
+        if not iface:
+            return
+
+        self._ta_flows = {} 
+        self._ta_data = []
+
+        self.btn_start_capture.setEnabled(False)
+        self.btn_stop_capture.setEnabled(True)
+        self.ta_status.setText(f"// capturing on {iface['name']}...")
+        self.ta_status.setStyleSheet("""
+            background-color: #080808;
+            color: #00ccff;
+            font-size: 10px;
+            padding: 4px 12px;
+            border-top: 1px solid #1a1a1a;
+        """)
+
+        self.ta_worker = TrafficWorker(iface["name"])
+        self.ta_worker.packet_captured.connect(self._ta_on_packet)
+        self.ta_worker.finished.connect(self._ta_on_finished)
+        self.ta_worker.start()
+
+    def _ta_stop(self):
+        if hasattr(self, 'ta_worker') and self.ta_worker.isRunning():
+            self.ta_worker.stop()
+        self.btn_start_capture.setEnabled(True)
+        self.btn_stop_capture.setEnabled(False)
+        self.ta_status.setStyleSheet("""
+            background-color: #080808;
+            color: #333333;
+            font-size: 10px;
+            padding: 4px 12px;
+            border-top: 1px solid #1a1a1a;
+        """)
+
+    def _ta_clear(self):
+        self._ta_flows = {}
+        self._ta_data = []
+        self.ta_table.setRowCount(0)
+        self.btn_ta_export.setEnabled(False)
+        self.ta_status.setText("// cleared — press [ START ] to begin capture")
+
+    def _ta_on_packet(self, pkt: dict):
+        key = (pkt["src"], pkt["dst"], pkt["proto"], pkt["port"])
+        if key not in self._ta_flows:
+            self._ta_flows[key] = {"packets": 0, "bytes": 0}
+        self._ta_flows[key]["packets"] += 1
+        self._ta_flows[key]["bytes"] += pkt["size"]
+        self._ta_refresh_table()
+
+    def _ta_refresh_table(self):
+        self._ta_data = [
+            {"src": k[0], "dst": k[1], "proto": k[2], "port": k[3],
+             "packets": v["packets"], "bytes": v["bytes"]}
+            for k, v in self._ta_flows.items()
+        ]
+        self._ta_data.sort(key=lambda x: x["packets"], reverse=True)
+
+        text = self.ta_filter.text().lower()
+        filtered = self._ta_data if not text else [
+            e for e in self._ta_data
+            if text in e["src"] or text in e["dst"]
+            or text in e["proto"].lower() or text in e["port"]
+        ]
+        self._populate_ta_table(filtered)
+
+        total_pkts = sum(e["packets"] for e in self._ta_data)
+        total_bytes = sum(e["bytes"] for e in self._ta_data)
+        self.ta_status.setText(
+            f"// {len(self._ta_data)} flows — {total_pkts} packets — {total_bytes} bytes"
+        )
+        if self._ta_data:
+            self.btn_ta_export.setEnabled(True)
+
+    def _ta_on_finished(self):
+        self.btn_start_capture.setEnabled(True)
+        self.btn_stop_capture.setEnabled(False)
+
 
     def _build_table(self):
         self.table = QTableWidget()
@@ -863,10 +1217,10 @@ class MainWindow(QMainWindow):
         layout.addWidget(sep)
         layout.addSpacing(8)
 
-        self.detail_ip       = QLabel("IP: —")
-        self.detail_mac      = QLabel("MAC: —")
-        self.detail_hostname = QLabel("HOSTNAME: —")
-        self.detail_vendor   = QLabel("VENDOR: —")
+        self.detail_ip = QLabel("IP: —")
+        self.detail_mac = QLabel("MAC: —")
+        self.detail_hostname= QLabel("HOSTNAME: —")
+        self.detail_vendor  = QLabel("VENDOR: —")
 
         for label in [self.detail_ip, self.detail_mac,
                       self.detail_hostname, self.detail_vendor]:

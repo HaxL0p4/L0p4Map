@@ -156,6 +156,7 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self._build_home_page())   
         self.stack.addWidget(self._build_scan_page())   
         self.stack.addWidget(self._build_graph_page())  
+        self.stack.addWidget(self._build_trafficAnalyzer_page())
         body_layout.addWidget(self.stack, stretch=1)
 
         root_layout.addWidget(body, stretch=1)
@@ -201,11 +202,13 @@ class MainWindow(QMainWindow):
         btn_home,  path_home  = make_btn("home.svg",     "Home")
         btn_scan,  path_scan  = make_btn("eye.svg", "Port Scan")
         btn_graph, path_graph = make_btn("network2.svg",    "Network Graph")
+        btn_traffic, path_traffic = make_btn("traffic.svg", "Traffic Analyzer")
 
         self.nav_btns = [
             (btn_home,  path_home),
             (btn_scan,  path_scan),
             (btn_graph, path_graph),
+            (btn_traffic, path_traffic)
         ]
 
         def navigate(index):
@@ -215,6 +218,7 @@ class MainWindow(QMainWindow):
         btn_home.clicked.connect(lambda: navigate(0))
         btn_scan.clicked.connect(lambda: navigate(1))
         btn_graph.clicked.connect(lambda: navigate(2))
+        btn_traffic.clicked.connect(lambda: navigate(3))
 
         for btn, path in self.nav_btns:
             layout.addWidget(btn)
@@ -380,6 +384,7 @@ class MainWindow(QMainWindow):
             ("-sX", "Xmas scan"),
             ("-p-", "All ports"),
             ("-A", "Aggressive"),
+            ("-Pn", "No ping"),
         ],
         "DETECTION": [
             ("-sV", "Service version"),
@@ -811,6 +816,22 @@ class MainWindow(QMainWindow):
         self.graph_ready = True
         if hasattr(self, '_pending_graph_data'):
             self._update_graph(self._pending_graph_data)
+
+        
+    def _build_trafficAnalyzer_page(self):
+        page = QWidget()
+        layout = QVBoxLayout()
+        page.setLayout(layout)
+
+        text = QLabel("// Still in development :)")
+        text.setStyleSheet("color: grey;")
+
+        textLayout = QHBoxLayout()
+        textLayout.addWidget(text, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        layout.addLayout(textLayout)
+
+        return page
         
 
     def _build_table(self):
@@ -974,6 +995,7 @@ class MainWindow(QMainWindow):
         self.graph_view.page().runJavaScript(f"updateGraph('{data}')")
 
     def _go_to_scan(self):
+        self._set_active_nav(1)
         row = self.table.currentRow()
         if row < 0:
             return

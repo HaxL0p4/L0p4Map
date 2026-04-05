@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QTableWidget,
     QTableWidgetItem, QHeaderView, QTextEdit,
     QComboBox, QStackedWidget, QCheckBox, QLineEdit, QScrollArea,
-    QFileDialog
+    QFileDialog, QSplashScreen
 )
 
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -34,6 +34,58 @@ def load_colored_svg(path, color, size=24):
     painter.fillRect(pixmap.rect(), QColor(color))
     painter.end()
     return QIcon(pixmap)
+
+
+class LogoIniziale(QSplashScreen):
+    def __init__(self):
+        pixmap = QPixmap(600,350)
+        pixmap.fill(QColor("#0d0d0d"))
+
+        painter = QPainter(pixmap)
+        
+        logo_path = os.path.join(os.path.dirname(__file__), "assets", "screenLogo.png")
+        if os.path.exists(logo_path):
+            maxL = 540
+            maxA = 190
+            logo = QPixmap(logo_path).scaled(
+                maxL,
+                maxA,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            x = (600 - logo.width()) // 2
+            painter.drawPixmap(x, 40, logo)
+
+        painter.setPen(QColor("#00ff99"))
+        painter.setFont(QFont("JetBrains Mono" , 28, QFont.Weight.Bold))
+        painter.drawText(
+            pixmap.rect().adjusted(0,210,0,0),
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
+            "L0p4Map"
+        )
+
+        painter.setPen(QColor("#444444"))
+        painter.setFont(QFont("JetBrains Mono", 10))
+        painter.drawText(
+            pixmap.rect().adjusted(0,270,0,0),
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
+            "Nmap was blind. L0p4Map sees."
+        )
+
+        painter.setPen(QColor("#333333"))
+        painter.setFont(QFont("JetBrains Mono", 8))
+        painter.drawText(
+            pixmap.rect().adjusted(0,300,0,0),
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
+            "v0.1.0-beta - loading..."
+        )
+
+        painter.setPen(QColor("#00ff22"))
+        painter.drawRect(0,0,599,349)
+        painter.end()
+
+        super().__init__(pixmap)
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint)
 
 
 class ActionWorker(QThread):
@@ -1412,6 +1464,9 @@ if __name__ == "__main__":
     os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--no-sandbox --disable-gpu --disable-software-rasterizer"
     os.environ["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
     app = QApplication(sys.argv)
+    logo = LogoIniziale()
+    logo.show()
+    app.processEvents()
     window = MainWindow()
-    window.show()
+    QTimer.singleShot(2500, lambda: (logo.finish(window), window.show()))
     sys.exit(app.exec())

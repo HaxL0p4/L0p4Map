@@ -42,6 +42,7 @@ No bloat. No BS. Just raw network intelligence.
 
 ## 🚧 Upcoming Features
 
+- **Attack Surface section** — visualize exposed services, open ports, and potential vulnerabilities on hosts, helping identify security risks at a glance. (*Now in development*)
 - **Complete Traffic Analyzer page** — real-time network traffic inspection and analysis
 - **Custom Node Labels** — assign custom names to devices directly from the graph
 - **Graph Persistence** — save and reload network topologies

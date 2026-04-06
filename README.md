@@ -61,7 +61,7 @@ No bloat. No BS. Just raw network intelligence.
 ### Network Topology — Interactive network topology graph
 ![Network Topology Graph](img/retepng.png)
 
-### Attack surface - Exposed services, open ports and vulnerability overview
+### Attack surface - Exposed services, open ports and vulnerability overview *(in development)*
 ![Network Topology Graph](img/as.png)
 
 ### Traffic Analyzer — Real-time network traffic analysis *(in development)*

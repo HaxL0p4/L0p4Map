@@ -1500,7 +1500,7 @@ class MainWindow(QMainWindow):
         self.output_box.setPlaceholderText("// output here")
         layout.addWidget(self.output_box, stretch=1)
 
-        for btn in [self.btn_ping, self.btn_portscan, self.btn_traceroute]:
+        for btn in [self.btn_ping, self.btn_traceroute,self.btn_portscan]:
             btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             btn.setEnabled(False)
             layout.addWidget(btn)

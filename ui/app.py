@@ -235,7 +235,7 @@ class AttackSurfaceWorker(QThread):
         cmd_xml = [
             "nmap", "-sV", "-O", "-sC",
             "--script", "vuln,vulners",
-            "--open", "-oX", "-", self.target
+            "--open","-Pn", "-oX", "-", self.target
         ]
         process2 = subprocess.Popen(
             cmd_xml,
@@ -251,6 +251,10 @@ class AttackSurfaceWorker(QThread):
     def _parse(self, xml: str) -> dict:
         import xml.etree.ElementTree as ET
         import re
+        import tempfile
+
+        with open("/tmp/nmap_debug.xml", "w") as f:
+            f.write(xml)
 
         result = {
             "target": self.target,
@@ -296,22 +300,30 @@ class AttackSurfaceWorker(QThread):
                 risk = "LOW"
 
             for script in port.findall("script"):
+                scriptID = script.get("id", "")
                 output = script.get("output", "")
+                if not any(x in scriptID for x in ["vulners", "vuln", "exploit"]):
+                    continue
                 for line in output.splitlines():
                     line = line.strip()
-                    if "CVE-" in line:
-                        cve_ids = re.findall(r"CVE-\d{4}-\d+", line)
-                        cvss_match = re.search(r"(\d+\.\d+)", line)
-                        cvss = float(cvss_match.group(1)) if cvss_match else 0.0
-                        for cve_id in cve_ids:
-                            if not any(c["id"] == cve_id for c in result["cves"]):
-                                result["cves"].append({
-                                    "id": cve_id,
-                                    "cvss": cvss,
-                                    "port": portid,
-                                    "service": svc_name,
-                                    "detail": line[:120]
-                                })
+                    if not line: continue
+
+                    import re
+                    match = re.match(r"(CVE-\d{4}-\d+)\s+(\d+\.\d+)\s+https?://", line)
+                    if match:
+                        cve_id = match.group(1)
+                        cvss = float(match.group(2))
+
+                        if any(c["id"] == cve_id for c in result["cves"]):
+                            continue
+
+                        result["cves"].append({
+                            "id": cve_id,
+                            "cvss": cvss,
+                            "port": portid,
+                            "service": svc_name,
+                            "detail": f"{svc_name} {svc_full} — {cve_id}",
+                        })
 
             result["ports"].append({
                 "port": portid,
@@ -321,6 +333,21 @@ class AttackSurfaceWorker(QThread):
                 "risk": risk,
             })
 
+        result["cves"].sort(key=lambda c: c["cvss"], reverse=True)
+
+        for port_entry in result["ports"]:
+            port_cves = [
+                c for c in result["cves"]
+                if c["port"] == port_entry["port"]
+            ]
+            if not port_cves: continue
+            max_cvss = max(c["cvss"] for c in port_cves)
+            if max_cvss >= 9.0:
+                port_entry["risk"] = "CRITICAL"
+            elif max_cvss >= 7.0:
+                port_entry["risk"] = "HIGH"
+            elif max_cvss >= 4.0:
+                port_entry["risk"] = "MEDIUM"
         result["cves"].sort(key=lambda c: c["cvss"], reverse=True)
         return result
 
@@ -1676,6 +1703,7 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.as_target)
 
         self.as_scan_btn = QPushButton("[ ANALYZE ]")
+        self.as_scan_btn.setDisabled(True)
         self.as_scan_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.as_scan_btn.setStyleSheet("""
             QPushButton {
@@ -1685,9 +1713,12 @@ class MainWindow(QMainWindow):
                 color: #00ff99; 
                 font-size: 14px; 
             }
+            QPushButton:pressed { font-size: 12px; }                          
         """)
         self.as_scan_btn.clicked.connect(self._as_start_scan)
         left_layout.addWidget(self.as_scan_btn)
+
+        self.as_target.textChanged.connect(lambda: self.as_scan_btn.setDisabled(True) if self.as_target.text() == "" else self.as_scan_btn.setDisabled(False) )
 
         sep = QWidget()
         sep.setFixedHeight(1)
@@ -1809,7 +1840,6 @@ class MainWindow(QMainWindow):
         """)
         right_layout.addWidget(self.as_status)
         layout.addWidget(right, stretch=1)
-
         return page
     
     def _as_start_scan(self):
@@ -1837,7 +1867,7 @@ class MainWindow(QMainWindow):
         self.as_worker.start()
 
     def _as_add_port_realtime(self, port: dict):
-        risk_colors = {"HIGH": "#ff4444", "MEDIUM": "#ff9900", "LOW": "#00ff99"}
+        risk_colors = {"CRITICAL":"#ff0000","HIGH": "#ff4444", "MEDIUM": "#ff9900", "LOW": "#00ff99"}
         row = self.as_ports_table.rowCount()
         self.as_ports_table.insertRow(row)
         self.as_ports_table.setItem(row, 0, QTableWidgetItem(port["port"]))

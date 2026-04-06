@@ -172,6 +172,158 @@ class TrafficWorker(QThread):
         )
         self.finished.emit()
 
+    
+class AttackSurfaceWorker(QThread):
+    finished = pyqtSignal(dict)
+    status_update = pyqtSignal(str)
+    port_found = pyqtSignal(dict)
+
+    def __init__(self, target: str):
+        super().__init__()
+        self.target = target
+
+    def run(self):
+        import re
+
+        cmd_live = [
+            "nmap", "-sV", "-O", "--open", "-T4", self.target
+        ]
+        process = subprocess.Popen(
+            cmd_live,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True
+        )
+
+        for line in process.stdout:
+            line = line.strip()
+            if not line:
+                continue
+
+            if "Scanning" in line or "scan report" in line:
+                self.status_update.emit(f"// {line.lower()}")
+            elif "OS details" in line or "Running:" in line:
+                self.status_update.emit(f"// {line.lower()}")
+            elif "/tcp" in line or "/udp" in line:
+                self.status_update.emit(f"// port found: {line}")
+                match = re.match(
+                    r"(\d+)/(tcp|udp)\s+open\s+(\S+)\s*(.*)", line
+                )
+                if match:
+                    portid = match.group(1)
+                    proto = match.group(2)
+                    svc = match.group(3)
+                    version = match.group(4).strip()
+                    portnum = int(portid)
+                    if portnum in {21,23,25,110,135,139,445,512,513,514,3389,5900,6379,27017}:
+                        risk = "HIGH"
+                    elif portnum in {22,80,8080,3306,5432,1433,2375,2376,4444}:
+                        risk = "MEDIUM"
+                    else:
+                        risk = "LOW"
+                    self.port_found.emit({
+                        "port": portid,
+                        "protocol": proto,
+                        "service": svc,
+                        "version": version or "-",
+                        "risk": risk,
+                    })
+
+        process.wait()
+
+        self.status_update.emit("// running vulnerability scripts...")
+        cmd_xml = [
+            "nmap", "-sV", "-O", "-sC",
+            "--script", "vuln,vulners",
+            "--open", "-oX", "-", self.target
+        ]
+        process2 = subprocess.Popen(
+            cmd_xml,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True
+        )
+        xml_output, _ = process2.communicate()
+        result = self._parse(xml_output)
+        self.status_update.emit("// scan complete")
+        self.finished.emit(result)
+
+    def _parse(self, xml: str) -> dict:
+        import xml.etree.ElementTree as ET
+        import re
+
+        result = {
+            "target": self.target,
+            "os": "Unknown",
+            "ports": [],
+            "cves": [],
+        }
+
+        try:
+            root = ET.fromstring(xml)
+        except ET.ParseError:
+            return result
+
+        host = root.find("host")
+        if host is None:
+            return result
+
+        osmatch = host.find(".//osmatch")
+        if osmatch is not None:
+            name = osmatch.get("name", "Unknown")
+            accuracy = osmatch.get("accuracy", "?")
+            result["os"] = f"{name} ({accuracy}%)"
+
+        for port in host.findall(".//port"):
+            state = port.find("state")
+            if state is None or state.get("state") != "open":
+                continue
+
+            portid = port.get("portid", "?")
+            protocol = port.get("protocol", "tcp")
+            service = port.find("service")
+            svc_name = service.get("name", "-") if service is not None else "-"
+            svc_product = service.get("product", "") if service is not None else ""
+            svc_version = service.get("version", "") if service is not None else ""
+            svc_full = f"{svc_product} {svc_version}".strip() or "-"
+
+            portnum = int(portid)
+            if portnum in {21,23,25,110,135,139,445,512,513,514,3389,5900,6379,27017}:
+                risk = "HIGH"
+            elif portnum in {22,80,8080,3306,5432,1433,2375,2376,4444}:
+                risk = "MEDIUM"
+            else:
+                risk = "LOW"
+
+            for script in port.findall("script"):
+                output = script.get("output", "")
+                for line in output.splitlines():
+                    line = line.strip()
+                    if "CVE-" in line:
+                        cve_ids = re.findall(r"CVE-\d{4}-\d+", line)
+                        cvss_match = re.search(r"(\d+\.\d+)", line)
+                        cvss = float(cvss_match.group(1)) if cvss_match else 0.0
+                        for cve_id in cve_ids:
+                            if not any(c["id"] == cve_id for c in result["cves"]):
+                                result["cves"].append({
+                                    "id": cve_id,
+                                    "cvss": cvss,
+                                    "port": portid,
+                                    "service": svc_name,
+                                    "detail": line[:120]
+                                })
+
+            result["ports"].append({
+                "port": portid,
+                "protocol": protocol,
+                "service": svc_name,
+                "version": svc_full,
+                "risk": risk,
+            })
+
+        result["cves"].sort(key=lambda c: c["cvss"], reverse=True)
+        return result
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -263,8 +415,8 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self._build_home_page())   
         self.stack.addWidget(self._build_scan_page())   
         self.stack.addWidget(self._build_graph_page())
-        self.stack.addWidget(self._build_trafficAnalyzer_page())
         self.stack.addWidget(self._build_attackSurface_page())
+        self.stack.addWidget(self._build_trafficAnalyzer_page())
         body_layout.addWidget(self.stack, stretch=1)
 
         root_layout.addWidget(body, stretch=1)
@@ -310,15 +462,15 @@ class MainWindow(QMainWindow):
         btn_home,  path_home  = make_btn("home.svg",     "Home")
         btn_scan,  path_scan  = make_btn("eye.svg", "Port Scan")
         btn_graph, path_graph = make_btn("network2.svg",    "Network Graph")
-        btn_traffic, path_traffic = make_btn("traffic.svg", "Traffic Analyzer")
         btn_attack, path_attack = make_btn("attack.svg", "Attack Surface")
+        btn_traffic, path_traffic = make_btn("traffic.svg", "Traffic Analyzer")
 
         self.nav_btns = [
             (btn_home,  path_home),
             (btn_scan,  path_scan),
             (btn_graph, path_graph),
-            (btn_traffic, path_traffic),
-            (btn_attack, path_attack)
+            (btn_attack, path_attack),
+            (btn_traffic, path_traffic)
         ]
 
         def navigate(index):
@@ -328,8 +480,8 @@ class MainWindow(QMainWindow):
         btn_home.clicked.connect(lambda: navigate(0))
         btn_scan.clicked.connect(lambda: navigate(1))
         btn_graph.clicked.connect(lambda: navigate(2))
-        btn_traffic.clicked.connect(lambda: navigate(3))
-        btn_attack.clicked.connect(lambda: navigate(4))
+        btn_traffic.clicked.connect(lambda: navigate(4))
+        btn_attack.clicked.connect(lambda: navigate(3))
 
         for btn, path in self.nav_btns:
             layout.addWidget(btn)
@@ -1011,7 +1163,7 @@ class MainWindow(QMainWindow):
             writer.writerows(self._ta_data)
         self.statusBar().showMessage(f"Traffic exported to {path}")
 
-    # IN DEVELOPMENT
+    # ancora in beta
     def _build_trafficAnalyzer_page(self):
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -1271,12 +1423,11 @@ class MainWindow(QMainWindow):
 
         portScan_action = QAction("Send to port scan", self)
         ta_action = QAction("Send to Traffic Analyzer", self)
-        as_action = QAction("Send to Attack Surface (soon)", self)
+        as_action = QAction("Send to Attack Surface", self)
 
-        portScan_action.triggered.connect(lambda: (self.stack.setCurrentIndex(1), self.scan_target.setText(ip)))
-        ta_action.triggered.connect(lambda: (self.stack.setCurrentIndex(3), self.ta_filter.setText(ip)))
-
-        as_action.setDisabled(True)
+        portScan_action.triggered.connect(lambda: (self.stack.setCurrentIndex(1), self.scan_target.setText(ip), self._set_active_nav(1)))
+        ta_action.triggered.connect(lambda: (self.stack.setCurrentIndex(4), self.ta_filter.setText(ip), self._set_active_nav(4)))
+        as_action.triggered.connect(lambda: (self.stack.setCurrentIndex(3), self.as_target.setText(ip), self._set_active_nav(3)))
 
         menu.addAction(portScan_action)
         menu.addAction(ta_action)
@@ -1491,17 +1642,331 @@ class MainWindow(QMainWindow):
         self.btn_traceroute.clicked.disconnect()
         self.btn_traceroute.clicked.connect(self._run_traceroute)
 
-    # SEZIONE ATTACK SURFACE (In development)
+    # SEZIONE ATTACK SURFACE (Beta)
     def _build_attackSurface_page(self):
         page = QWidget()
-        layout = QVBoxLayout()
-        page.setLayout(layout)
+        layout = QHBoxLayout(page)
+        layout.setSpacing(0)
+        layout.setContentsMargins(0, 0, 0, 0)
 
-        text = QLabel("// Coming ;)")
-        text.setStyleSheet("color:  grey;")
-        layout.addWidget(text, alignment=Qt.AlignmentFlag.AlignCenter)
+        left = QWidget()
+        left.setFixedWidth(240)
+        left.setStyleSheet("background-color: #080808; border-right: 1px solid #1a1a1a;")
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(10, 10, 10, 10)
+        left_layout.setSpacing(6)
+
+        as_label = QLabel("TARGET")
+        as_label.setStyleSheet("color: #00ff99; font-size: 11px; letter-spacing: 2px;")
+        left_layout.addWidget(as_label)
+
+        self.as_target = QLineEdit()
+        self.as_target.setPlaceholderText("192.168.1.1")
+        self.as_target.setStyleSheet("""
+            QLineEdit {
+                background-color: #111111;
+                color: #e0e0e0;
+                border: 1px solid #1a1a1a;
+                padding: 6px;
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 11px;
+            }
+            QLineEdit:focus { border-color: #00ff99; }
+        """)
+        left_layout.addWidget(self.as_target)
+
+        self.as_scan_btn = QPushButton("[ ANALYZE ]")
+        self.as_scan_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.as_scan_btn.setStyleSheet("""
+            QPushButton {
+                border: 1px solid #00ff99 !important;                           
+            }
+            QPushButton:hover { 
+                color: #00ff99; 
+                font-size: 14px; 
+            }
+        """)
+        self.as_scan_btn.clicked.connect(self._as_start_scan)
+        left_layout.addWidget(self.as_scan_btn)
+
+        sep = QWidget()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet("background-color: #1a1a1a; margin-top: 4px; margin-bottom: 4px;")
+        left_layout.addWidget(sep)
+
+        history_label = QLabel("HISTORY")
+        history_label.setStyleSheet("color: #444444; font-size: 10px; letter-spacing: 2px;")
+        left_layout.addWidget(history_label)
+
+        self.as_history = QTableWidget()
+        self.as_history.setColumnCount(2)
+        self.as_history.setHorizontalHeaderLabels(["TARGET", "RISK"])
+        self.as_history.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.as_history.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self.as_history.setColumnWidth(1, 60)
+        self.as_history.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.as_history.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.as_history.verticalHeader().setVisible(False)
+        self.as_history.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.as_history.itemClicked.connect(self._as_load_from_history)
+        self.as_history.setStyleSheet("""
+            QTableWidget { background-color: #080808; border: none; }
+            QTableWidget::item:selected { color: #00ff99; }
+        """)
+        left_layout.addWidget(self.as_history, stretch=1)
+
+        self._as_results = {}
+
+        layout.addWidget(left)
+
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(0)
+
+        self.as_header = QLabel("// attack surface — select a target")
+        self.as_header.setFixedHeight(36)
+        self.as_header.setStyleSheet("""
+            background-color: #080808;
+            color: #444444;
+            font-size: 11px;
+            padding: 0px 12px;
+            border-bottom: 1px solid #1a1a1a;
+        """)
+        right_layout.addWidget(self.as_header)
+
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter.setStyleSheet("QSplitter::handle { background-color: #1a1a1a; }")
+
+        ports_container = QWidget()
+        ports_layout = QVBoxLayout(ports_container)
+        ports_layout.setContentsMargins(0, 0, 0, 0)
+        ports_layout.setSpacing(0)
+
+        ports_label = QLabel("  OPEN PORTS")
+        ports_label.setFixedHeight(24)
+        ports_label.setStyleSheet("background-color: #0a0a0a; color: #555555; font-size: 10px; letter-spacing: 2px; border-bottom: 1px solid #111;")
+        ports_layout.addWidget(ports_label)
+
+        self.as_ports_table = QTableWidget()
+        self.as_ports_table.setColumnCount(5)
+        self.as_ports_table.setHorizontalHeaderLabels(["PORT", "PROTO", "SERVICE", "VERSION", "RISK"])
+        self.as_ports_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.as_ports_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self.as_ports_table.setColumnWidth(0, 70)
+        self.as_ports_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self.as_ports_table.setColumnWidth(1, 60)
+        self.as_ports_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        self.as_ports_table.setColumnWidth(2, 100)
+        self.as_ports_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        self.as_ports_table.setColumnWidth(4, 80)
+        self.as_ports_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.as_ports_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.as_ports_table.verticalHeader().setVisible(False)
+        self.as_ports_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        ports_layout.addWidget(self.as_ports_table)
+        splitter.addWidget(ports_container)
+
+        cve_container = QWidget()
+        cve_layout = QVBoxLayout(cve_container)
+        cve_layout.setContentsMargins(0, 0, 0, 0)
+        cve_layout.setSpacing(0)
+
+        cve_label = QLabel("  VULNERABILITIES / CVE")
+        cve_label.setFixedHeight(24)
+        cve_label.setStyleSheet("background-color: #0a0a0a; color: #555555; font-size: 10px; letter-spacing: 2px; border-bottom: 1px solid #111; border-top: 1px solid #111;")
+        cve_layout.addWidget(cve_label)
+
+        self.as_cve_table = QTableWidget()
+        self.as_cve_table.setColumnCount(5)
+        self.as_cve_table.setHorizontalHeaderLabels(["CVE ID", "CVSS", "PORT", "SERVICE", "DETAIL"])
+        self.as_cve_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        self.as_cve_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self.as_cve_table.setColumnWidth(0, 140)
+        self.as_cve_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self.as_cve_table.setColumnWidth(1, 60)
+        self.as_cve_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        self.as_cve_table.setColumnWidth(2, 60)
+        self.as_cve_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        self.as_cve_table.setColumnWidth(3, 100)
+        self.as_cve_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.as_cve_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.as_cve_table.verticalHeader().setVisible(False)
+        self.as_cve_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        cve_layout.addWidget(self.as_cve_table)
+        splitter.addWidget(cve_container)
+
+        splitter.setSizes([300, 200])
+        right_layout.addWidget(splitter, stretch=1)
+
+        self.as_status = QLabel("// ready")
+        self.as_status.setStyleSheet("""
+            background-color: #080808;
+            color: #333333;
+            font-size: 10px;
+            padding: 4px 12px;
+            border-top: 1px solid #1a1a1a;
+        """)
+        right_layout.addWidget(self.as_status)
+        layout.addWidget(right, stretch=1)
 
         return page
+    
+    def _as_start_scan(self):
+        target = self.as_target.text().strip()
+        if not target:
+            return
+
+        self.as_scan_btn.setEnabled(False)
+        self.as_scan_btn.setText("[ SCANNING... ]")
+        self.as_ports_table.setRowCount(0)
+        self.as_cve_table.setRowCount(0)
+        self.as_status.setText(f"// starting scan on {target}...")
+        self.as_status.setStyleSheet("""
+            background-color: #080808;
+            color: #00ff99;
+            font-size: 10px;
+            padding: 4px 12px;
+            border-top: 1px solid #1a1a1a;
+        """)
+
+        self.as_worker = AttackSurfaceWorker(target)
+        self.as_worker.status_update.connect(self.as_status.setText)
+        self.as_worker.port_found.connect(self._as_add_port_realtime)
+        self.as_worker.finished.connect(self._as_on_finished)
+        self.as_worker.start()
+
+    def _as_add_port_realtime(self, port: dict):
+        risk_colors = {"HIGH": "#ff4444", "MEDIUM": "#ff9900", "LOW": "#00ff99"}
+        row = self.as_ports_table.rowCount()
+        self.as_ports_table.insertRow(row)
+        self.as_ports_table.setItem(row, 0, QTableWidgetItem(port["port"]))
+        self.as_ports_table.setItem(row, 1, QTableWidgetItem(port["protocol"]))
+        self.as_ports_table.setItem(row, 2, QTableWidgetItem(port["service"]))
+        self.as_ports_table.setItem(row, 3, QTableWidgetItem(port["version"]))
+        risk_item = QTableWidgetItem(port["risk"])
+        risk_item.setForeground(QColor(risk_colors.get(port["risk"], "#aaaaaa")))
+        self.as_ports_table.setItem(row, 4, risk_item)
+
+    def _as_on_finished(self, result: dict):
+        self.as_scan_btn.setEnabled(True)
+        self.as_scan_btn.setText("[ ANALYZE ]")
+
+        target = result["target"]
+        self._as_results[target] = result
+        self._as_display(result)
+        self._as_update_history(target, result)
+
+    def _as_display(self, result: dict):
+        target = result["target"]
+        os_info = result["os"]
+        port_count = len(result["ports"])
+        cve_count = len(result["cves"])
+
+        self.as_header.setText(
+            f"// {target}  —  OS: {os_info}  —  {port_count} ports  —  {cve_count} CVE"
+        )
+        self.as_header.setStyleSheet("""
+            background-color: #080808;
+            color: #00ff99;
+            font-size: 11px;
+            padding: 0px 12px;
+            border-bottom: 1px solid #1a1a1a;
+        """)
+
+        risk_colors = {"HIGH": "#ff4444", "MEDIUM": "#ff9900", "LOW": "#00ff99"}
+        self.as_ports_table.setRowCount(0)
+        for p in result["ports"]:
+            row = self.as_ports_table.rowCount()
+            self.as_ports_table.insertRow(row)
+            self.as_ports_table.setItem(row, 0, QTableWidgetItem(p["port"]))
+            self.as_ports_table.setItem(row, 1, QTableWidgetItem(p["protocol"]))
+            self.as_ports_table.setItem(row, 2, QTableWidgetItem(p["service"]))
+            self.as_ports_table.setItem(row, 3, QTableWidgetItem(p["version"]))
+            risk_item = QTableWidgetItem(p["risk"])
+            risk_item.setForeground(QColor(risk_colors.get(p["risk"], "#aaaaaa")))
+            self.as_ports_table.setItem(row, 4, risk_item)
+
+        self.as_cve_table.setRowCount(0)
+        for c in result["cves"]:
+            row = self.as_cve_table.rowCount()
+            self.as_cve_table.insertRow(row)
+            self.as_cve_table.setItem(row, 0, QTableWidgetItem(c["id"]))
+            cvss = c["cvss"]
+            cvss_item = QTableWidgetItem(str(cvss))
+            if cvss >= 9.0:
+                cvss_item.setForeground(QColor("#ff2222"))
+            elif cvss >= 7.0:
+                cvss_item.setForeground(QColor("#ff6600"))
+            elif cvss >= 4.0:
+                cvss_item.setForeground(QColor("#ffaa00"))
+            else:
+                cvss_item.setForeground(QColor("#888888"))
+            self.as_cve_table.setItem(row, 1, cvss_item)
+            self.as_cve_table.setItem(row, 2, QTableWidgetItem(c["port"]))
+            self.as_cve_table.setItem(row, 3, QTableWidgetItem(c["service"]))
+            self.as_cve_table.setItem(row, 4, QTableWidgetItem(c["detail"]))
+
+        if result["cves"]:
+            max_cvss = result["cves"][0]["cvss"]
+            if max_cvss >= 9.0:
+                risk_summary = "CRITICAL"
+                color = "#ff2222"
+            elif max_cvss >= 7.0:
+                risk_summary = "HIGH"
+                color = "#ff6600"
+            elif max_cvss >= 4.0:
+                risk_summary = "MEDIUM"
+                color = "#ffaa00"
+            else:
+                risk_summary = "LOW"
+                color = "#00ff99"
+        elif result["ports"]:
+            high_ports = [p for p in result["ports"] if p["risk"] == "HIGH"]
+            risk_summary = "HIGH" if high_ports else "LOW"
+            color = "#ff4444" if high_ports else "#00ff99"
+        else:
+            risk_summary = "CLEAN"
+            color = "#00ff99"
+
+        self.as_status.setText(f"// scan complete — max risk: {risk_summary}")
+        self.as_status.setStyleSheet(f"""
+            background-color: #080808;
+            color: {color};
+            font-size: 10px;
+            padding: 4px 12px;
+            border-top: 1px solid #1a1a1a;
+        """)
+
+    def _as_update_history(self, target: str, result: dict):
+        for row in range(self.as_history.rowCount()):
+            if self.as_history.item(row, 0).text() == target:
+                self.as_history.removeRow(row)
+                break
+
+        row = 0
+        self.as_history.insertRow(row)
+        self.as_history.setItem(row, 0, QTableWidgetItem(target))
+
+        if result["cves"]:
+            max_cvss = result["cves"][0]["cvss"]
+            risk = "CRIT" if max_cvss >= 9 else "HIGH" if max_cvss >= 7 else "MED"
+            color = "#ff2222" if max_cvss >= 9 else "#ff6600" if max_cvss >= 7 else "#ffaa00"
+        elif any(p["risk"] == "HIGH" for p in result["ports"]):
+            risk, color = "HIGH", "#ff4444"
+        else:
+            risk, color = "LOW", "#00ff99"
+
+        risk_item = QTableWidgetItem(risk)
+        risk_item.setForeground(QColor(color))
+        risk_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.as_history.setItem(row, 1, risk_item)
+
+    def _as_load_from_history(self, item):
+        row = item.row()
+        target = self.as_history.item(row, 0).text()
+        if target in self._as_results:
+            self._as_display(self._as_results[target])
 
 if __name__ == "__main__":
     check_root()
@@ -1513,4 +1978,4 @@ if __name__ == "__main__":
     app.processEvents()
     window = MainWindow()
     QTimer.singleShot(2500, lambda: (logo.finish(window), window.show()))
-    sys.exit(app.exec())
+    sys.exit(app.exec())    

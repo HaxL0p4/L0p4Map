@@ -15,7 +15,6 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QUrl, QSize
 from PyQt6.QtGui import QFont, QColor, QIcon, QPixmap, QPainter, QAction
 from PyQt6.QtSvg import QSvgRenderer
 import subprocess
-import sys
 import os
 import csv
 from scapy.all import ARP, Ether, srp, sniff, IP as ScapyIP, TCP,UDP, ICMP
@@ -251,10 +250,6 @@ class AttackSurfaceWorker(QThread):
     def _parse(self, xml: str) -> dict:
         import xml.etree.ElementTree as ET
         import re
-        import tempfile
-
-        with open("/tmp/nmap_debug.xml", "w") as f:
-            f.write(xml)
 
         result = {
             "target": self.target,
@@ -273,10 +268,16 @@ class AttackSurfaceWorker(QThread):
             return result
 
         osmatch = host.find(".//osmatch")
+        os_name = ""
         if osmatch is not None:
-            name = osmatch.get("name", "Unknown")
+            os_name = osmatch.get("name", "")
             accuracy = osmatch.get("accuracy", "?")
-            result["os"] = f"{name} ({accuracy}%)"
+            result["os"] = f"{os_name} ({accuracy}%)"
+
+        osL = os_name.lower()
+        is_windows = any(k in osL for k in ["windows", "win"])
+        is_linux = any(k in osL for k in ["linux", "ubuntu", "debian", "raspbian", "fedora", "centos"])
+        is_macos = any(k in osL for k in ["mac os", "macos", "darwin"])
 
         for port in host.findall(".//port"):
             state = port.find("state")
@@ -290,6 +291,7 @@ class AttackSurfaceWorker(QThread):
             svc_product = service.get("product", "") if service is not None else ""
             svc_version = service.get("version", "") if service is not None else ""
             svc_full = f"{svc_product} {svc_version}".strip() or "-"
+            svc_ostype = service.get("ostype", "").lower() if service is not None else ""
 
             portnum = int(portid)
             if portnum in {21,23,25,110,135,139,445,512,513,514,3389,5900,6379,27017}:
@@ -298,6 +300,14 @@ class AttackSurfaceWorker(QThread):
                 risk = "MEDIUM"
             else:
                 risk = "LOW"
+                
+            result["ports"].append({
+                "port": portid,
+                "protocol": protocol,
+                "service": svc_name,
+                "version": svc_full,
+                "risk": risk,
+            })
 
             for script in port.findall("script"):
                 scriptID = script.get("id", "")
@@ -310,28 +320,34 @@ class AttackSurfaceWorker(QThread):
 
                     import re
                     match = re.match(r"(CVE-\d{4}-\d+)\s+(\d+\.\d+)\s+https?://", line)
-                    if match:
-                        cve_id = match.group(1)
-                        cvss = float(match.group(2))
+                    if not match: continue
+                    
+                    cve_id = match.group(1)
+                    cvss = float(match.group(2))
 
-                        if any(c["id"] == cve_id for c in result["cves"]):
+                    if any(c["id"] == cve_id for c in result["cves"]):
+                        continue
+
+                    windows_only_services = {"netlogon", "msrpc", "microsoft-ds"}
+                    if svc_name.lower() in windows_only_services and not is_windows:
+                        continue
+
+                    if svc_ostype and svc_ostype != "":
+                        if "windows" in svc_ostype and not is_windows:
                             continue
+                        if "linux" in svc_ostype and not is_linux: 
+                            continue
+                    
+                    if not svc_product: continue
+                    if cvss < 4.0: continue
 
-                        result["cves"].append({
-                            "id": cve_id,
-                            "cvss": cvss,
-                            "port": portid,
-                            "service": svc_name,
-                            "detail": f"{svc_name} {svc_full} — {cve_id}",
-                        })
-
-            result["ports"].append({
-                "port": portid,
-                "protocol": protocol,
-                "service": svc_name,
-                "version": svc_full,
-                "risk": risk,
-            })
+                    result["cves"].append({
+                        "id": cve_id,
+                        "cvss": cvss,
+                        "port": portid,
+                        "service": svc_name,
+                        "detail": f"{svc_name} {svc_full} — {cve_id}",
+                    })
 
         result["cves"].sort(key=lambda c: c["cvss"], reverse=True)
 
@@ -348,7 +364,6 @@ class AttackSurfaceWorker(QThread):
                 port_entry["risk"] = "HIGH"
             elif max_cvss >= 4.0:
                 port_entry["risk"] = "MEDIUM"
-        result["cves"].sort(key=lambda c: c["cvss"], reverse=True)
         return result
 
 
@@ -794,7 +809,6 @@ class MainWindow(QMainWindow):
         self.btn_export_scan = QPushButton("[ EXPORT SCAN ]")
         self.btn_export_scan.setStyleSheet("QPushButton:pressed {font-size: 12px;}")
         self.btn_export_scan.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        contenuto_output = self.output_box.toPlainText()
         self.btn_export_scan.setDisabled(True)
         self.btn_export_scan.clicked.connect(self._export_scan)
 
@@ -1107,42 +1121,6 @@ class MainWindow(QMainWindow):
         if hasattr(self, '_pending_graph_data'):
             self._update_graph(self._pending_graph_data)
 
-        
-    def _start_ta_capture(self):
-        iface = self.iface_selector.currentData()
-        if not iface:
-            return
-
-        duration = self.ta_duration.currentData()
-        self.btn_start_capture.setText(f"[ CAPTURING {duration}s... ]")
-        self.btn_start_capture.setEnabled(False)
-        self.ta_status.setText(f"// capturing on {iface['name']} for {duration}s...")
-        self.ta_table.setRowCount(0)
-
-        self.ta_worker = TrafficWorker(iface["name"], duration=duration)
-        self.ta_worker.finished.connect(self._on_ta_captured)
-        self.ta_worker.start()
-
-    def _on_ta_captured(self, edges):
-        self.btn_start_capture.setText("[ START CAPTURE ]")
-        self.btn_start_capture.setEnabled(True)
-        self._ta_data = edges
-
-        if not edges:
-            self.ta_status.setText("// no traffic captured — try again.")
-            return
-
-        self._populate_ta_table(edges)
-        total_packets = sum(e["packets"] for e in edges)
-        total_bytes = sum(e["bytes"] for e in edges)
-        self.ta_status.setText(
-            f"// {len(edges)} connections — {total_packets} packets — {total_bytes} bytes"
-        )
-        self.btn_ta_export.setEnabled(True)
-
-        data = json.dumps(edges)
-        data = data.replace("'", "\\'")
-        self.graph_view.page().runJavaScript(f"updateEdges('{data}')")
 
     def _populate_ta_table(self, edges):
         self.ta_table.setRowCount(0)
@@ -1155,6 +1133,7 @@ class MainWindow(QMainWindow):
             self.ta_table.setItem(row, 3, QTableWidgetItem(e["port"]))
             self.ta_table.setItem(row, 4, QTableWidgetItem(str(e["packets"])))
             self.ta_table.setItem(row, 5, QTableWidgetItem(str(e["bytes"])))
+
 
     def _filter_ta_table(self, text):
         if not hasattr(self, '_ta_data'):
@@ -1387,6 +1366,7 @@ class MainWindow(QMainWindow):
         self.ta_status.setText("// cleared — press [ START ] to begin capture")
 
     def _ta_on_packet(self, pkt: dict):
+        if not hasattr(self, "_ta_flows"): return
         key = (pkt["src"], pkt["dst"], pkt["proto"], pkt["port"])
         if key not in self._ta_flows:
             self._ta_flows[key] = {"packets": 0, "bytes": 0}
@@ -1881,7 +1861,7 @@ class MainWindow(QMainWindow):
     def _as_on_finished(self, result: dict):
         self.as_scan_btn.setEnabled(True)
         self.as_scan_btn.setText("[ ANALYZE ]")
-
+        self.as_ports_table.setRowCount(0)
         target = result["target"]
         self._as_results[target] = result
         self._as_display(result)
@@ -1904,7 +1884,7 @@ class MainWindow(QMainWindow):
             border-bottom: 1px solid #1a1a1a;
         """)
 
-        risk_colors = {"HIGH": "#ff4444", "MEDIUM": "#ff9900", "LOW": "#00ff99"}
+        risk_colors = {"CRITICAL":"#ff2222","HIGH": "#ff4444", "MEDIUM": "#ff9900", "LOW": "#00ff99"}
         self.as_ports_table.setRowCount(0)
         for p in result["ports"]:
             row = self.as_ports_table.rowCount()

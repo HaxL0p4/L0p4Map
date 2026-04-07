@@ -10,9 +10,10 @@ from PyQt6.QtWidgets import (
 
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 import json
-
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QUrl, QSize
-from PyQt6.QtGui import QFont, QColor, QIcon, QPixmap, QPainter, QAction
+import re
+import time
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QUrl, QSize, QUrl as QtUrl
+from PyQt6.QtGui import QFont, QColor, QIcon, QPixmap, QPainter, QAction, QDesktopServices
 from PyQt6.QtSvg import QSvgRenderer
 import subprocess
 import os
@@ -171,7 +172,20 @@ class TrafficWorker(QThread):
         )
         self.finished.emit()
 
-    
+
+CVSS_MIN = 4.0
+MAX_CVES_PER_PORT = 5
+GENERIC_SERVICES = {"tcpwrapped", "unknown", "filtered", ""}
+HIGH_RISK_PORTS  = {21,23,25,110,135,139,445,512,513,514,3389,5900,6379,27017}
+MEDIUM_RISK_PORTS = {22,80,8080,3306,5432,1433,2375,2376,4444}
+
+def cvss_to_severity(cvss: float) -> str:
+    if cvss >= 9.0: return "CRITICAL"
+    if cvss >= 7.0: return "HIGH"
+    if cvss >= 4.0: return "MEDIUM"
+    return "LOW"   
+
+
 class AttackSurfaceWorker(QThread):
     finished = pyqtSignal(dict)
     status_update = pyqtSignal(str)
@@ -182,17 +196,28 @@ class AttackSurfaceWorker(QThread):
         self.target = target
 
     def run(self):
-        import re
+        import tempfile, xml.etree.ElementTree as ET
 
-        cmd_live = [
-            "nmap", "-sV", "-O", "--open", "-T4", self.target
+        tmp = tempfile.NamedTemporaryFile(suffix=".xml", delete=False)
+        tmp_path = tmp.name
+        tmp.close()
+
+        cmd = [
+            "nmap", "-sV", "-O", "-sC",
+            "--script", "vuln,vulners",
+            "--open", "-Pn", "-T4",
+            "-oX", tmp_path,
+            self.target
         ]
+
         process = subprocess.Popen(
-            cmd_live,
+            cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             text=True
         )
+
+        seen_ports = set()
 
         for line in process.stdout:
             line = line.strip()
@@ -205,11 +230,12 @@ class AttackSurfaceWorker(QThread):
                 self.status_update.emit(f"// {line.lower()}")
             elif "/tcp" in line or "/udp" in line:
                 self.status_update.emit(f"// port found: {line}")
-                match = re.match(
-                    r"(\d+)/(tcp|udp)\s+open\s+(\S+)\s*(.*)", line
-                )
+                match = re.match(r"(\d+)/(tcp|udp)\s+open\s+(\S+)\s*(.*)", line)
                 if match:
                     portid = match.group(1)
+                    if portid in seen_ports:
+                        continue
+                    seen_ports.add(portid)
                     proto = match.group(2)
                     svc = match.group(3)
                     version = match.group(4).strip()
@@ -221,35 +247,22 @@ class AttackSurfaceWorker(QThread):
                     else:
                         risk = "LOW"
                     self.port_found.emit({
-                        "port": portid,
-                        "protocol": proto,
-                        "service": svc,
-                        "version": version or "-",
-                        "risk": risk,
+                        "port": portid, "protocol": proto,
+                        "service": svc, "version": version or "-", "risk": risk,
                     })
 
         process.wait()
+        self.status_update.emit("// parsing vulnerabilities...")
 
-        self.status_update.emit("// running vulnerability scripts...")
-        cmd_xml = [
-            "nmap", "-sV", "-O", "-sC",
-            "--script", "vuln,vulners",
-            "--open","-Pn", "-oX", "-", self.target
-        ]
-        process2 = subprocess.Popen(
-            cmd_xml,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True
-        )
-        xml_output, _ = process2.communicate()
-        result = self._parse(xml_output)
+        result = self._parse(tmp_path)
+        os.unlink(tmp_path)
+
         self.status_update.emit("// scan complete")
         self.finished.emit(result)
 
-    def _parse(self, xml: str) -> dict:
+    def _parse(self, xml_path: str) -> dict:
         import xml.etree.ElementTree as ET
-        import re
+        from collections import defaultdict
 
         result = {
             "target": self.target,
@@ -259,111 +272,126 @@ class AttackSurfaceWorker(QThread):
         }
 
         try:
-            root = ET.fromstring(xml)
-        except ET.ParseError:
+            tree = ET.parse(xml_path)  
+            root = tree.getroot()
+        except (ET.ParseError, FileNotFoundError):
             return result
 
         host = root.find("host")
         if host is None:
             return result
 
+        cpe_list = [cpe.text or "" for cpe in host.findall(".//cpe")]
+        is_windows = any("windows" in c for c in cpe_list)
+        is_linux   = any("linux"   in c for c in cpe_list)
+        is_macos   = any("mac_os"  in c or "macos" in c for c in cpe_list)
+
         osmatch = host.find(".//osmatch")
-        os_name = ""
         if osmatch is not None:
-            os_name = osmatch.get("name", "")
+            os_name  = osmatch.get("name", "")
             accuracy = osmatch.get("accuracy", "?")
             result["os"] = f"{os_name} ({accuracy}%)"
+            if not any([is_windows, is_linux, is_macos]):
+                osL = os_name.lower()
+                is_windows = "windows" in osL
+                is_linux   = any(k in osL for k in ["linux","ubuntu","debian"])
+                is_macos   = any(k in osL for k in ["mac os","macos","darwin"])
 
-        osL = os_name.lower()
-        is_windows = any(k in osL for k in ["windows", "win"])
-        is_linux = any(k in osL for k in ["linux", "ubuntu", "debian", "raspbian", "fedora", "centos"])
-        is_macos = any(k in osL for k in ["mac os", "macos", "darwin"])
+        port_cve_count = defaultdict(int)
 
         for port in host.findall(".//port"):
             state = port.find("state")
             if state is None or state.get("state") != "open":
                 continue
 
-            portid = port.get("portid", "?")
+            portid   = port.get("portid", "?")
             protocol = port.get("protocol", "tcp")
-            service = port.find("service")
-            svc_name = service.get("name", "-") if service is not None else "-"
+            service  = port.find("service")
+
+            svc_name    = service.get("name",    "-") if service is not None else "-"
             svc_product = service.get("product", "") if service is not None else ""
             svc_version = service.get("version", "") if service is not None else ""
-            svc_full = f"{svc_product} {svc_version}".strip() or "-"
-            svc_ostype = service.get("ostype", "").lower() if service is not None else ""
+            svc_full    = f"{svc_product} {svc_version}".strip() or "-"
+            svc_ostype  = service.get("ostype",  "").lower() if service is not None else ""
 
             portnum = int(portid)
-            if portnum in {21,23,25,110,135,139,445,512,513,514,3389,5900,6379,27017}:
+            if portnum in HIGH_RISK_PORTS:
                 risk = "HIGH"
-            elif portnum in {22,80,8080,3306,5432,1433,2375,2376,4444}:
+            elif portnum in MEDIUM_RISK_PORTS:
                 risk = "MEDIUM"
             else:
                 risk = "LOW"
-                
+
             result["ports"].append({
-                "port": portid,
+                "port":     portid,
                 "protocol": protocol,
-                "service": svc_name,
-                "version": svc_full,
-                "risk": risk,
+                "service":  svc_name,
+                "version":  svc_full,
+                "risk":     risk,
             })
 
             for script in port.findall("script"):
                 scriptID = script.get("id", "")
-                output = script.get("output", "")
+                output   = script.get("output", "")
+
                 if not any(x in scriptID for x in ["vulners", "vuln", "exploit"]):
                     continue
+
                 for line in output.splitlines():
                     line = line.strip()
-                    if not line: continue
+                    if not line:
+                        continue
 
-                    import re
                     match = re.match(r"(CVE-\d{4}-\d+)\s+(\d+\.\d+)\s+https?://", line)
-                    if not match: continue
-                    
+                    if not match:
+                        continue
+
                     cve_id = match.group(1)
-                    cvss = float(match.group(2))
+                    cvss   = float(match.group(2))
+
+                    if cvss < CVSS_MIN:
+                        continue
+
+                    if svc_name.lower() in GENERIC_SERVICES:
+                        continue
+
+                    if not svc_product:
+                        continue
 
                     if any(c["id"] == cve_id for c in result["cves"]):
                         continue
 
-                    windows_only_services = {"netlogon", "msrpc", "microsoft-ds"}
-                    if svc_name.lower() in windows_only_services and not is_windows:
+                    if port_cve_count[portid] >= MAX_CVES_PER_PORT:
                         continue
 
-                    if svc_ostype and svc_ostype != "":
+                    windows_only = {"netlogon", "msrpc", "microsoft-ds", "ms-wbt-server"}
+                    if svc_name.lower() in windows_only and not is_windows:
+                        continue
+
+                    if svc_ostype:
                         if "windows" in svc_ostype and not is_windows:
                             continue
-                        if "linux" in svc_ostype and not is_linux: 
+                        if "linux" in svc_ostype and not is_linux:
                             continue
-                    
-                    if not svc_product: continue
-                    if cvss < 4.0: continue
 
+                    port_cve_count[portid] += 1
                     result["cves"].append({
-                        "id": cve_id,
-                        "cvss": cvss,
-                        "port": portid,
+                        "id":      cve_id,
+                        "cvss":    cvss,
+                        "port":    portid,
                         "service": svc_name,
-                        "detail": f"{svc_name} {svc_full} — {cve_id}",
+                        "detail":  f"{svc_name} {svc_full} — {cve_id}",
                     })
 
         result["cves"].sort(key=lambda c: c["cvss"], reverse=True)
 
         for port_entry in result["ports"]:
-            port_cves = [
-                c for c in result["cves"]
-                if c["port"] == port_entry["port"]
-            ]
-            if not port_cves: continue
+            port_cves = [c for c in result["cves"] if c["port"] == port_entry["port"]]
+            if not port_cves:
+                continue
             max_cvss = max(c["cvss"] for c in port_cves)
-            if max_cvss >= 9.0:
-                port_entry["risk"] = "CRITICAL"
-            elif max_cvss >= 7.0:
-                port_entry["risk"] = "HIGH"
-            elif max_cvss >= 4.0:
-                port_entry["risk"] = "MEDIUM"
+            port_entry["risk"] = cvss_to_severity(max_cvss)
+
         return result
 
 
@@ -532,10 +560,6 @@ class MainWindow(QMainWindow):
 
         layout.addStretch()
         return sidebar
-    
-
-    def _active_nav_btn(self):
-        return self.nav_btns[self.stack.currentIndex()][0]
 
     def _set_active_nav(self, index):
         for i, (btn, path) in enumerate(self.nav_btns):
@@ -1121,32 +1145,6 @@ class MainWindow(QMainWindow):
             self._update_graph(self._pending_graph_data)
 
 
-    def _populate_ta_table(self, edges):
-        self.ta_table.setRowCount(0)
-        for e in edges:
-            row = self.ta_table.rowCount()
-            self.ta_table.insertRow(row)
-            self.ta_table.setItem(row, 0, QTableWidgetItem(e["src"]))
-            self.ta_table.setItem(row, 1, QTableWidgetItem(e["dst"]))
-            self.ta_table.setItem(row, 2, QTableWidgetItem(e["proto"]))
-            self.ta_table.setItem(row, 3, QTableWidgetItem(e["port"]))
-            self.ta_table.setItem(row, 4, QTableWidgetItem(str(e["packets"])))
-            self.ta_table.setItem(row, 5, QTableWidgetItem(str(e["bytes"])))
-
-
-    def _filter_ta_table(self, text):
-        if not hasattr(self, '_ta_data'):
-            return
-        text = text.lower()
-        filtered = [
-            e for e in self._ta_data
-            if text in e["src"].lower()
-            or text in e["dst"].lower()
-            or text in e["proto"].lower()
-            or text in e["port"].lower()
-        ]
-        self._populate_ta_table(filtered)
-
     def _ta_send_to_scan(self, item):
         row = item.row()
         ip = self.ta_table.item(row, 0).text()
@@ -1155,7 +1153,7 @@ class MainWindow(QMainWindow):
         self._set_active_nav(1)
 
     def _export_ta_csv(self):
-        if not hasattr(self, '_ta_data') or not self._ta_data:
+        if not self._ta_packets:
             return
         path, _ = QFileDialog.getSaveFileName(
             self, "Export Traffic", "traffic.csv", "CSV Files (*.csv);;All Files (*)"
@@ -1163,17 +1161,64 @@ class MainWindow(QMainWindow):
         if not path:
             return
         with open(path, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=["src","dst","proto","port","packets","bytes"])
+            writer = csv.DictWriter(f, fieldnames=["n","time","src","dst","proto","port","size"])
             writer.writeheader()
-            writer.writerows(self._ta_data)
+            for p in self._ta_packets:
+                writer.writerow({k: p[k] for k in ["n","time","src","dst","proto","port","size"]})
         self.statusBar().showMessage(f"Traffic exported to {path}")
 
     # ancora in beta
     def _build_trafficAnalyzer_page(self):
         page = QWidget()
-        layout = QVBoxLayout(page)
+        layout = QHBoxLayout(page)
         layout.setSpacing(0)
         layout.setContentsMargins(0, 0, 0, 0)
+
+        left = QWidget()
+        left.setFixedWidth(200)
+        left.setStyleSheet("background-color: #080808; border-right: 1px solid #1a1a1a;")
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(8, 8, 8, 8)
+        left_layout.setSpacing(4)
+
+        dev_label = QLabel("DEVICES")
+        dev_label.setStyleSheet("color: #444; font-size: 10px; letter-spacing: 2px;")
+        left_layout.addWidget(dev_label)
+
+        self.ta_device_list = QTableWidget()
+        self.ta_device_list.setColumnCount(2)
+        self.ta_device_list.setHorizontalHeaderLabels(["IP", "PKTS"])
+        self.ta_device_list.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.ta_device_list.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self.ta_device_list.setColumnWidth(1, 50)
+        self.ta_device_list.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.ta_device_list.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.ta_device_list.verticalHeader().setVisible(False)
+        self.ta_device_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.ta_device_list.itemClicked.connect(self._ta_filter_by_device)
+        left_layout.addWidget(self.ta_device_list, stretch=1)
+
+        btn_clear_filter = QPushButton("[ SHOW ALL ]")
+        btn_clear_filter.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        btn_clear_filter.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #555;
+                border: 1px solid #222;
+                padding: 3px;
+                font-size: 9px;
+            }
+            QPushButton:hover { color: #aaa; border-color: #555; }
+        """)
+        btn_clear_filter.clicked.connect(lambda: self._ta_apply_filter(""))
+        left_layout.addWidget(btn_clear_filter)
+
+        layout.addWidget(left)
+
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        right_layout.setSpacing(0)
+        right_layout.setContentsMargins(0, 0, 0, 0)
 
         header = QWidget()
         header.setFixedHeight(36)
@@ -1181,7 +1226,7 @@ class MainWindow(QMainWindow):
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(12, 0, 12, 0)
 
-        header_label = QLabel("// traffic analyzer ( Still in development :) )")
+        header_label = QLabel("// traffic analyzer")
         header_label.setStyleSheet("color: #444444; font-size: 11px;")
         header_layout.addWidget(header_label)
         header_layout.addStretch()
@@ -1198,9 +1243,8 @@ class MainWindow(QMainWindow):
                 padding: 4px 10px;
                 font-size: 10px;
                 font-weight: bold;
-                letter-spacing: 1px;
             }
-            QPushButton:hover { background-color: #001a33; border-color: #00ccff; font-size: 11px;}
+            QPushButton:hover { background-color: #001a33; }
             QPushButton:disabled { color: #333; border-color: #222; }
         """)
         header_layout.addWidget(self.btn_start_capture)
@@ -1219,7 +1263,6 @@ class MainWindow(QMainWindow):
                 padding: 4px 10px;
                 font-size: 10px;
                 font-weight: bold;
-                letter-spacing: 1px;
             }
             QPushButton:hover { background-color: #330000; border-color: #ff4444; }
             QPushButton:disabled { color: #333; border-color: #222; }
@@ -1239,7 +1282,6 @@ class MainWindow(QMainWindow):
                 padding: 4px 10px;
                 font-size: 10px;
                 font-weight: bold;
-                letter-spacing: 1px;
             }
             QPushButton:hover { color: #aaaaaa; border-color: #666666; }
         """)
@@ -1259,29 +1301,26 @@ class MainWindow(QMainWindow):
                 padding: 4px 10px;
                 font-size: 10px;
                 font-weight: bold;
-                letter-spacing: 1px;
             }
-            QPushButton:hover { background-color: #001a0d; border-color: #00ff99; }
+            QPushButton:hover { background-color: #001a0d; }
             QPushButton:disabled { color: #333; border-color: #222; }
         """)
         header_layout.addWidget(self.btn_ta_export)
-        header_layout.addSpacing(10)
-
-        layout.addWidget(header)
+        right_layout.addWidget(header)
 
         filter_bar = QWidget()
-        filter_bar.setFixedHeight(32)
-        filter_bar.setStyleSheet("background-color: #0a0a0a; border-bottom: 1px solid #111111;")
+        filter_bar.setFixedHeight(28)
+        filter_bar.setStyleSheet("background-color: #0a0a0a; border-bottom: 1px solid #111;")
         filter_layout = QHBoxLayout(filter_bar)
         filter_layout.setContentsMargins(12, 0, 12, 0)
 
         filter_label = QLabel("FILTER:")
-        filter_label.setStyleSheet("color: #444; font-size: 10px; letter-spacing: 1px;")
+        filter_label.setStyleSheet("color: #444; font-size: 10px;")
         filter_layout.addWidget(filter_label)
         filter_layout.addSpacing(8)
 
         self.ta_filter = QLineEdit()
-        self.ta_filter.setPlaceholderText("IP, protocol or port...")
+        self.ta_filter.setPlaceholderText("IP, protocol, port or hostname...")
         self.ta_filter.setStyleSheet("""
             QLineEdit {
                 background-color: #0d0d0d;
@@ -1291,21 +1330,32 @@ class MainWindow(QMainWindow):
                 font-size: 11px;
                 font-family: 'JetBrains Mono', monospace;
             }
+            QLineEdit:focus { border-color: #00ff99; }
         """)
-        self.ta_filter.textChanged.connect(self._filter_ta_table)
+        self.ta_filter.textChanged.connect(self._ta_apply_filter)
         filter_layout.addWidget(self.ta_filter)
-        layout.addWidget(filter_bar)
+        right_layout.addWidget(filter_bar)
 
         self.ta_table = QTableWidget()
-        self.ta_table.setColumnCount(6)
-        self.ta_table.setHorizontalHeaderLabels(["SRC IP", "DST IP", "PROTOCOL", "PORT", "PACKETS", "BYTES"])
-        self.ta_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.ta_table.setColumnCount(7)
+        self.ta_table.setHorizontalHeaderLabels([
+            "#", "TIME", "SRC", "DST", "PROTO", "PORT", "SIZE"
+        ])
+        self.ta_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.ta_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        for col, w in [(0, 50), (1, 80), (4, 60), (5, 60), (6, 60)]:
+            self.ta_table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
+            self.ta_table.setColumnWidth(col, w)
         self.ta_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.ta_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.ta_table.verticalHeader().setVisible(False)
         self.ta_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.ta_table.itemDoubleClicked.connect(self._ta_send_to_scan)
-        layout.addWidget(self.ta_table, stretch=1)
+        self.ta_table.setAlternatingRowColors(True)
+        self.ta_table.setStyleSheet("""
+            QTableWidget { alternate-background-color: #0f0f0f; }
+        """)
+        right_layout.addWidget(self.ta_table, stretch=1)
 
         self.ta_status = QLabel("// ready — press [ START ] to begin capture")
         self.ta_status.setStyleSheet("""
@@ -1315,7 +1365,13 @@ class MainWindow(QMainWindow):
             padding: 4px 12px;
             border-top: 1px solid #1a1a1a;
         """)
-        layout.addWidget(self.ta_status)
+        right_layout.addWidget(self.ta_status)
+        layout.addWidget(right, stretch=1)
+
+        self._ta_packets = []
+        self._ta_packet_count = 0
+        self._ta_start_time = None
+        self._ta_device_stats = {}
 
         return page
     
@@ -1325,8 +1381,13 @@ class MainWindow(QMainWindow):
         if not iface:
             return
 
-        self._ta_flows = {} 
+        self._ta_packets = []
+        self._ta_packet_count = 0
+        self._ta_start_time = None
+        self._ta_device_stats = {}
         self._ta_data = []
+        self.ta_table.setRowCount(0)
+        self.ta_device_list.setRowCount(0)
 
         self.btn_start_capture.setEnabled(False)
         self.btn_stop_capture.setEnabled(True)
@@ -1358,44 +1419,129 @@ class MainWindow(QMainWindow):
         """)
 
     def _ta_clear(self):
-        self._ta_flows = {}
+        self._ta_packets = []
+        self._ta_packet_count = 0
+        self._ta_start_time = None
+        self._ta_device_stats = {}
         self._ta_data = []
         self.ta_table.setRowCount(0)
+        self.ta_device_list.setRowCount(0)
         self.btn_ta_export.setEnabled(False)
         self.ta_status.setText("// cleared — press [ START ] to begin capture")
 
     def _ta_on_packet(self, pkt: dict):
-        if not hasattr(self, "_ta_flows"): return
-        key = (pkt["src"], pkt["dst"], pkt["proto"], pkt["port"])
-        if key not in self._ta_flows:
-            self._ta_flows[key] = {"packets": 0, "bytes": 0}
-        self._ta_flows[key]["packets"] += 1
-        self._ta_flows[key]["bytes"] += pkt["size"]
-        self._ta_refresh_table()
+        if not hasattr(self, '_ta_packets'):
+            return
+    
+        if self._ta_start_time is None:
+            self._ta_start_time = time.time()
+    
+        elapsed = time.time() - self._ta_start_time
+        self._ta_packet_count += 1
+    
+        src_label = self._resolve_ip_label(pkt["src"])
+        dst_label = self._resolve_ip_label(pkt["dst"])
+    
+        packet_data = {
+            "n": self._ta_packet_count,
+            "time": f"{elapsed:.3f}s",
+            "src": pkt["src"],
+            "dst": pkt["dst"],
+            "src_label": src_label,
+            "dst_label": dst_label,
+            "proto": pkt["proto"],
+            "port": pkt["port"],
+            "size": pkt["size"],
+        }
+    
+        self._ta_packets.append(packet_data)
+    
+        for ip in [pkt["src"], pkt["dst"]]:
+            if ip not in self._ta_device_stats:
+                self._ta_device_stats[ip] = 0
+            self._ta_device_stats[ip] += 1
+    
+        if self._ta_packet_count % 20 == 0 or self._ta_packet_count <= 5:
+            self._ta_add_row(packet_data)
+            self._ta_update_device_list()
+            self.ta_status.setText(
+                f"// {self._ta_packet_count} packets captured — {elapsed:.1f}s"
+            )
+            if self._ta_packet_count > 0:
+                self.btn_ta_export.setEnabled(True)
 
-    def _ta_refresh_table(self):
-        self._ta_data = [
-            {"src": k[0], "dst": k[1], "proto": k[2], "port": k[3],
-             "packets": v["packets"], "bytes": v["bytes"]}
-            for k, v in self._ta_flows.items()
+    
+    def _resolve_ip_label(self, ip: str) -> str:
+        if hasattr(self, 'last_hosts'):
+            for h in self.last_hosts:
+                if h["ip"] == ip:
+                    hostname = h.get("hostname", ip)
+                    if hostname != ip:
+                        return f"{ip} ({hostname.split('.')[0]})"
+        return ip
+    
+
+    def _ta_add_row(self, pkt: dict):
+        proto_colors = {
+            "TCP":  "#1a1a2e",
+            "UDP":  "#1a2e1a",
+            "ICMP": "#2e1a1a",
+            "OTHER": "#111111",
+        }
+        bg = QColor(proto_colors.get(pkt["proto"], "#111111"))
+
+        row = self.ta_table.rowCount()
+        self.ta_table.insertRow(row)
+
+        items = [
+            str(pkt["n"]),
+            pkt["time"],
+            pkt["src_label"],
+            pkt["dst_label"],
+            pkt["proto"],
+            pkt["port"],
+            f"{pkt['size']}B",
         ]
-        self._ta_data.sort(key=lambda x: x["packets"], reverse=True)
 
-        text = self.ta_filter.text().lower()
-        filtered = self._ta_data if not text else [
-            e for e in self._ta_data
-            if text in e["src"] or text in e["dst"]
-            or text in e["proto"].lower() or text in e["port"]
-        ]
-        self._populate_ta_table(filtered)
+        for col, text in enumerate(items):
+            item = QTableWidgetItem(text)
+            item.setBackground(bg)
+            if col == 4: 
+                colors = {"TCP": "#4488ff", "UDP": "#44cc88", "ICMP": "#ff8844", "OTHER": "#888888"}
+                item.setForeground(QColor(colors.get(pkt["proto"], "#888888")))
+            self.ta_table.setItem(row, col, item)
 
-        total_pkts = sum(e["packets"] for e in self._ta_data)
-        total_bytes = sum(e["bytes"] for e in self._ta_data)
-        self.ta_status.setText(
-            f"// {len(self._ta_data)} flows — {total_pkts} packets — {total_bytes} bytes"
-        )
-        if self._ta_data:
-            self.btn_ta_export.setEnabled(True)
+        self.ta_table.scrollToBottom()
+
+    def _ta_update_device_list(self):
+        self.ta_device_list.setRowCount(0)
+        sorted_devs = sorted(self._ta_device_stats.items(), key=lambda x: x[1], reverse=True)
+        for ip, count in sorted_devs:
+            row = self.ta_device_list.rowCount()
+            self.ta_device_list.insertRow(row)
+            label = self._resolve_ip_label(ip)
+            self.ta_device_list.setItem(row, 0, QTableWidgetItem(label))
+            count_item = QTableWidgetItem(str(count))
+            count_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.ta_device_list.setItem(row, 1, count_item)
+
+    def _ta_filter_by_device(self, item):
+        row = item.row()
+        ip_cell = self.ta_device_list.item(row, 0)
+        if ip_cell:
+            label = ip_cell.text()
+            ip = label.split(" ")[0]
+            self.ta_filter.setText(ip)
+
+    def _ta_apply_filter(self, text):
+        text = text.lower()
+        for row in range(self.ta_table.rowCount()):
+            visible = not text or any(
+                text in (self.ta_table.item(row, col).text().lower() if self.ta_table.item(row, col) else "")
+                for col in range(self.ta_table.columnCount())
+            )
+            self.ta_table.setRowHidden(row, not visible)
+
 
     def _ta_on_finished(self):
         self.btn_start_capture.setEnabled(True)
@@ -1804,11 +1950,13 @@ class MainWindow(QMainWindow):
         self.as_cve_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.as_cve_table.verticalHeader().setVisible(False)
         self.as_cve_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.as_cve_table.itemDoubleClicked.connect(self._as_open_cve)
         cve_layout.addWidget(self.as_cve_table)
         splitter.addWidget(cve_container)
 
         splitter.setSizes([300, 200])
         right_layout.addWidget(splitter, stretch=1)
+
 
         self.as_status = QLabel("// ready")
         self.as_status.setStyleSheet("""
@@ -1824,6 +1972,7 @@ class MainWindow(QMainWindow):
     
     def _as_start_scan(self):
         self.scanning = True
+        self.as_target.setDisabled(True)
         target = self.as_target.text().strip()
         if not target:
             return
@@ -1832,7 +1981,7 @@ class MainWindow(QMainWindow):
         self.as_scan_btn.setText("[ SCANNING... ]")
         self.as_ports_table.setRowCount(0)
         self.as_cve_table.setRowCount(0)
-        self.as_status.setText(f"// starting scan on {target}...")
+        self.as_status.setText(f"// scanning {target}...")
         self.as_status.setStyleSheet("""
             background-color: #080808;
             color: #00ff99;
@@ -1861,6 +2010,7 @@ class MainWindow(QMainWindow):
 
     def _as_on_finished(self, result: dict):
         self.scanning = False
+        self.as_target.setDisabled(False)
         self.as_scan_btn.setEnabled(True)
         self.as_scan_btn.setText("[ ANALYZE ]")
         self.as_ports_table.setRowCount(0)
@@ -1903,7 +2053,10 @@ class MainWindow(QMainWindow):
         for c in result["cves"]:
             row = self.as_cve_table.rowCount()
             self.as_cve_table.insertRow(row)
-            self.as_cve_table.setItem(row, 0, QTableWidgetItem(c["id"]))
+            cve_item = QTableWidgetItem(c["id"])
+            cve_item.setForeground(QColor("#4488ff"))
+            cve_item.setData(Qt.ItemDataRole.UserRole, f"https://nvd.nist.gov/vuln/detail/{c['id']}")
+            self.as_cve_table.setItem(row,0,cve_item)
             cvss = c["cvss"]
             cvss_item = QTableWidgetItem(str(cvss))
             if cvss >= 9.0:
@@ -1949,6 +2102,22 @@ class MainWindow(QMainWindow):
             padding: 4px 12px;
             border-top: 1px solid #1a1a1a;
         """)
+
+    def _as_open_cve(self, item):
+        if item.column() != 0: 
+            return
+        url = item.data(Qt.ItemDataRole.UserRole)
+        if not url:
+            return
+        real_user = os.environ.get("SUDO_USER") or os.environ.get("USER", "")
+        if real_user and real_user != "root":
+            subprocess.Popen(
+                ["sudo", "-u", real_user, "xdg-open", url],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            ) 
+        else:
+            QDesktopServices.openUrl(QtUrl(url))
 
     def _as_update_history(self, target: str, result: dict):
         for row in range(self.as_history.rowCount()):

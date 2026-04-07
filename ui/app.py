@@ -1147,7 +1147,8 @@ class MainWindow(QMainWindow):
 
     def _ta_send_to_scan(self, item):
         row = item.row()
-        ip = self.ta_table.item(row, 0).text()
+        ipR = self.ta_table.item(row, 2).text()
+        ip = ipR.split(" ")[0]
         self.scan_target.setText(ip)
         self.stack.setCurrentIndex(1)
         self._set_active_nav(1)
@@ -1419,6 +1420,10 @@ class MainWindow(QMainWindow):
         """)
 
     def _ta_clear(self):
+        if hasattr(self, 'ta_worker') and self.ta_worker.isRunning():
+            self.ta_worker.stop()
+            self.btn_start_capture.setEnabled(True)
+            self.btn_stop_capture.setEnabled(False)
         self._ta_packets = []
         self._ta_packet_count = 0
         self._ta_start_time = None
@@ -1460,6 +1465,8 @@ class MainWindow(QMainWindow):
             if ip not in self._ta_device_stats:
                 self._ta_device_stats[ip] = 0
             self._ta_device_stats[ip] += 1
+
+        self._ta_add_row(packet_data)
     
         if self._ta_packet_count % 20 == 0 or self._ta_packet_count <= 5:
             self._ta_add_row(packet_data)
@@ -1541,6 +1548,16 @@ class MainWindow(QMainWindow):
                 for col in range(self.ta_table.columnCount())
             )
             self.ta_table.setRowHidden(row, not visible)
+        visible_count = sum(
+            1 for r in range(self.ta_table.rowCount())
+            if not self.ta_table.isRowHidden(r)
+        )
+        if hasattr(self, '_ta_packet_count'):
+            self.ta_status.setText(
+                f"// showing {visible_count} of {self._ta_packet_count} packets"
+                if text else
+                f"// {self._ta_packet_count} packets captured"
+            )
 
 
     def _ta_on_finished(self):
@@ -2159,4 +2176,4 @@ if __name__ == "__main__":
     app.processEvents()
     window = MainWindow()
     QTimer.singleShot(2500, lambda: (logo.finish(window), window.show()))
-    sys.exit(app.exec())    
+    sys.exit(app.exec())

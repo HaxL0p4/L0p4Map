@@ -64,7 +64,7 @@ No bloat. No BS. Just raw network intelligence.
 ![Network Topology Graph](img/as.png)
 
 ### Traffic Analyzer — Real-time network traffic analysis
-![Network Topology Graph](img/traffic.p)
+![Network Topology Graph](img/traffic2.png)
 
 ---
 

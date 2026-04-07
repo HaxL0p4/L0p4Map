@@ -63,8 +63,8 @@ No bloat. No BS. Just raw network intelligence.
 ### Attack surface - Exposed services, open ports and vulnerability overview *(in development)*
 ![Network Topology Graph](img/as.png)
 
-### Traffic Analyzer — Real-time network traffic analysis *(in development)*
-![Network Topology Graph](img/traffic.png)
+### Traffic Analyzer — Real-time network traffic analysis
+![Network Topology Graph](img/traffic.p)
 
 ---
 

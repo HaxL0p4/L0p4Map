@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="utf-8">
+  <meta charset="utf-8">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background-color: #0d0d0d; overflow: hidden; }
@@ -321,6 +321,24 @@ function updateGraph(devicesJson) {
   const container = document.getElementById("graph");
   if (network) network.destroy();
   network = new vis.Network(container, { nodes, edges }, options);
+
+    network.on("doubleClick", function(params) {
+      if (params.nodes.length === 0) return;
+      const nodeId = params.nodes[0];
+      const node = nodes.get(nodeId);
+      if (!node || nodeId === "internet") return;
+
+      const current = node.label ? node.label.split("\n")[0] : "";
+      const name = prompt(`Custom name for ${current}:`, node._customName || "");
+      if (name === null) return; 
+
+      node._customName = name;
+      const ipLine = node.label ? node.label.split("\n")[0] : "";
+      nodes.update({
+        id: nodeId,
+        label: name ? `${ipLine}\n ${name}` : ipLine,
+      });
+  });
 
 }
 </script>

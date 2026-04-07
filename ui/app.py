@@ -812,7 +812,7 @@ class MainWindow(QMainWindow):
         self.btn_export_scan.setDisabled(True)
         self.btn_export_scan.clicked.connect(self._export_scan)
 
-        layout.addSpacing(10)
+        layout.addSpacing(6)
         layout.addWidget(self.btn_export_scan)
 
         layout.addStretch()
@@ -933,7 +933,6 @@ class MainWindow(QMainWindow):
         header_label = QLabel("// network topology graph")
         header_label.setStyleSheet("color: #444444; font-size: 11px; padding-right: 10px; padding-left: 10px; padin")
         header_layout.addWidget(header_label)
-        #header_layout.addStretch()
         header_layout.addSpacing(10)
 
         self.btn_export_graph = QComboBox()
@@ -1437,9 +1436,9 @@ class MainWindow(QMainWindow):
         as_action.triggered.connect(lambda: (self.stack.setCurrentIndex(3), self.as_target.setText(ip), self._set_active_nav(3)))
 
         menu.addAction(portScan_action)
-        menu.addAction(ta_action)
         menu.addAction(as_action)
-
+        menu.addAction(ta_action)
+        
         menu.exec(self.table.viewport().mapToGlobal(pos))
 
 

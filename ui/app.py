@@ -1650,6 +1650,7 @@ class MainWindow(QMainWindow):
 
     # SEZIONE ATTACK SURFACE (Beta)
     def _build_attackSurface_page(self):
+        self.scanning = False
         page = QWidget()
         layout = QHBoxLayout(page)
         layout.setSpacing(0)
@@ -1696,8 +1697,8 @@ class MainWindow(QMainWindow):
         """)
         self.as_scan_btn.clicked.connect(self._as_start_scan)
         left_layout.addWidget(self.as_scan_btn)
-
-        self.as_target.textChanged.connect(lambda: self.as_scan_btn.setDisabled(True) if self.as_target.text() == "" else self.as_scan_btn.setDisabled(False) )
+        
+        self.as_target.textChanged.connect(lambda: self.as_scan_btn.setDisabled(True) if self.as_target.text() == "" else self.as_scan_btn.setDisabled(self.scanning))
 
         sep = QWidget()
         sep.setFixedHeight(1)
@@ -1822,6 +1823,7 @@ class MainWindow(QMainWindow):
         return page
     
     def _as_start_scan(self):
+        self.scanning = True
         target = self.as_target.text().strip()
         if not target:
             return
@@ -1858,6 +1860,7 @@ class MainWindow(QMainWindow):
         self.as_ports_table.setItem(row, 4, risk_item)
 
     def _as_on_finished(self, result: dict):
+        self.scanning = False
         self.as_scan_btn.setEnabled(True)
         self.as_scan_btn.setText("[ ANALYZE ]")
         self.as_ports_table.setRowCount(0)

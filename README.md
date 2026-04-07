@@ -40,11 +40,11 @@ No bloat. No BS. Just raw network intelligence.
 - **Live Monitoring** — auto-refresh the network graph at configurable intervals (30s / 60s / 120s)
 - **Attack Surface section** — visualize exposed services, open ports, and potential vulnerabilities on hosts, helping identify security risks at a glance. (*in development*)
 - **Traffic Analyzer page** — real-time network traffic inspection and analysis (*In Development*)
+- **Custom Node Labels** — assign custom names to devices directly from the graph
 
 ## 🚧 Upcoming Features
 
 - **Attack surface Result Download** — save full output to `.txt` or `.pdf` via native file manager dialog
-- **Custom Node Labels** — assign custom names to devices directly from the graph
 - **Graph Persistence** — save and reload network topologies
 
 ---

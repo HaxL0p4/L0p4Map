@@ -43,6 +43,7 @@ No bloat. No BS. Just raw network intelligence.
 
 ## 🚧 Upcoming Features
 
+- **Attack surface Result Download** — save full output to `.txt` or `.pdf` via native file manager dialog
 - **Custom Node Labels** — assign custom names to devices directly from the graph
 - **Graph Persistence** — save and reload network topologies
 

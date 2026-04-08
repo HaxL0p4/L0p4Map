@@ -1863,6 +1863,24 @@ class MainWindow(QMainWindow):
         
         self.as_target.textChanged.connect(lambda: self.as_scan_btn.setDisabled(True) if self.as_target.text() == "" else self.as_scan_btn.setDisabled(self.scanning))
 
+        self.as_export_btn = QPushButton("[ EXPORT CSV ]")
+        self.as_export_btn.setDisabled(True)
+        self.as_export_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.as_export_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #00ff99;
+                border: 1px solid #00ff99;
+                padding: 6px 18px;
+                font-weight: bold;
+                letter-spacing: 1px;
+            }
+            QPushButton:hover { background-color: #001a0d; }
+            QPushButton:disabled { color: #333; border-color: #222; }
+        """)
+        self.as_export_btn.clicked.connect(self._as_export_csv)
+        left_layout.addWidget(self.as_export_btn)
+
         sep = QWidget()
         sep.setFixedHeight(1)
         sep.setStyleSheet("background-color: #1a1a1a; margin-top: 4px; margin-bottom: 4px;")
@@ -1987,6 +2005,47 @@ class MainWindow(QMainWindow):
         layout.addWidget(right, stretch=1)
         return page
     
+    def _as_export_csv(self):
+        target = self.as_target.text().strip()
+        if not target or target not in self._as_results:
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Attack Surface",
+            f"attack_surface_{target.replace('.', '_')}.csv",
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        if not path:
+            return
+
+        result = self._as_results[target]
+
+        with open(path, "w", newline="") as f:
+            writer = csv.writer(f)
+
+            writer.writerow(["TARGET", "OS", "PORTS_COUNT", "CVE_COUNT"])
+            writer.writerow([
+                result["target"],
+                result["os"],
+                len(result["ports"]),
+                len(result["cves"])
+            ])
+            writer.writerow([])
+
+            writer.writerow(["=== OPEN PORTS ==="])
+            writer.writerow(["PORT", "PROTOCOL", "SERVICE", "VERSION", "RISK"])
+            for p in result["ports"]:
+                writer.writerow([p["port"], p["protocol"], p["service"], p["version"], p["risk"]])
+            writer.writerow([])
+
+            writer.writerow(["=== VULNERABILITIES / CVE ==="])
+            writer.writerow(["CVE_ID", "CVSS", "PORT", "SERVICE", "DETAIL"])
+            for c in result["cves"]:
+                writer.writerow([c["id"], c["cvss"], c["port"], c["service"], c["detail"]])
+
+        self.statusBar().showMessage(f"Attack surface exported to {path}")
+    
     def _as_start_scan(self):
         self.scanning = True
         self.as_target.setDisabled(True)
@@ -2035,6 +2094,7 @@ class MainWindow(QMainWindow):
         self._as_results[target] = result
         self._as_display(result)
         self._as_update_history(target, result)
+        self.as_export_btn.setEnabled(True)
 
     def _as_display(self, result: dict):
         target = result["target"]

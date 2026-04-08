@@ -41,7 +41,7 @@ No bloat. No BS. Just raw network intelligence.
 - **Attack Surface section** — visualize exposed services, open ports, and potential vulnerabilities on hosts, helping identify security risks at a glance. (*in development*)
 - **Traffic Analyzer page** — real-time network traffic inspection and analysis (*In Development*)
 - **Custom Node Labels** — assign custom names to devices directly from the graph
-- **Attack surface Result Download** — save full output to `.txt` via native file manager dialog *(`.pdf` soon!)*
+- **Attack surface Result Download** — save full output to `.csv` via native file manager dialog *(`.pdf` soon!)*
 
 ## 🚧 Upcoming Features
 

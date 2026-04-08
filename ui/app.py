@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QComboBox, QStackedWidget, QCheckBox, QLineEdit, QScrollArea,
     QFileDialog, QSplashScreen, QMenu
 )
-
+import ipaddress
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 import json
 import re
@@ -171,6 +171,30 @@ class TrafficWorker(QThread):
             stop_filter=lambda _: not self._running
         )
         self.finished.emit()
+
+def is_valid_target(text: str) -> bool:
+    text = text.strip()
+    if not text:
+        return False
+    try:
+        ipaddress.ip_address(text)
+        return True
+    except ValueError:
+        pass
+    try:
+        ipaddress.ip_network(text, strict=False)
+        return True
+    except ValueError:
+        pass
+    if re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}-\d{1,3}$", text):
+        return True
+    hostname_re = re.compile(
+        r"^(?!-)[a-zA-Z0-9\-]{1,63}(?:\.[a-zA-Z0-9\-]{1,63})*\.?$"
+    )
+    if hostname_re.match(text):
+        if re.match(r"^\d+$", text):
+            return False
+        return True
 
 
 CVSS_MIN = 4.0
@@ -1811,7 +1835,6 @@ class MainWindow(QMainWindow):
         self.btn_traceroute.clicked.disconnect()
         self.btn_traceroute.clicked.connect(self._run_traceroute)
 
-    # SEZIONE ATTACK SURFACE (Beta)
     def _build_attackSurface_page(self):
         self.scanning = False
         page = QWidget()
@@ -1851,12 +1874,50 @@ class MainWindow(QMainWindow):
         self.as_scan_btn.setStyleSheet("""
             QPushButton { border: 1px solid #00ff99 !important; }
             QPushButton:hover { background-color: #001a0d; color: #00ff99; }
-            QPushButton:pressed { font-size: 12px; }                          
+            QPushButton:pressed { font-size: 12px; }
         """)
         self.as_scan_btn.clicked.connect(self._as_start_scan)
         left_layout.addWidget(self.as_scan_btn)
-        
-        self.as_target.textChanged.connect(lambda: self.as_scan_btn.setDisabled(True) if self.as_target.text() == "" else self.as_scan_btn.setDisabled(self.scanning))
+
+        def _on_as_target_changed(text):
+            valid = is_valid_target(text)
+            self.as_scan_btn.setDisabled(not valid or self.scanning)
+            if not text:
+                self.as_target.setStyleSheet("""
+                    QLineEdit {
+                        background-color: #111111;
+                        color: #e0e0e0;
+                        border: 1px solid #1a1a1a;
+                        padding: 6px;
+                        font-family: 'JetBrains Mono', monospace;
+                        font-size: 11px;
+                    }
+                    QLineEdit:focus { border-color: #00ff99; }
+                """)
+            elif valid:
+                self.as_target.setStyleSheet("""
+                    QLineEdit {
+                        background-color: #111111;
+                        color: #e0e0e0;
+                        border: 1px solid #00ff99;
+                        padding: 6px;
+                        font-family: 'JetBrains Mono', monospace;
+                        font-size: 11px;
+                    }
+                """)
+            else:
+                self.as_target.setStyleSheet("""
+                    QLineEdit {
+                        background-color: #111111;
+                        color: #ff4444;
+                        border: 1px solid #ff4444;
+                        padding: 6px;
+                        font-family: 'JetBrains Mono', monospace;
+                        font-size: 11px;
+                    }
+                """)
+
+        self.as_target.textChanged.connect(_on_as_target_changed)
 
         self.as_export_btn = QPushButton("[ EXPORT CSV ]")
         self.as_export_btn.setDisabled(True)
@@ -1870,7 +1931,7 @@ class MainWindow(QMainWindow):
                 font-weight: bold;
                 letter-spacing: 1px;
             }
-            QPushButton:hover { background-color: #001a0d;  }
+            QPushButton:hover { background-color: #001a0d; }
             QPushButton:disabled { color: #333; border-color: #222; }
             QPushButton:pressed { font-size: 12px; }
         """)
@@ -1904,7 +1965,6 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.as_history, stretch=1)
 
         self._as_results = {}
-
         layout.addWidget(left)
 
         right = QWidget()
@@ -1988,7 +2048,6 @@ class MainWindow(QMainWindow):
         splitter.setSizes([300, 200])
         right_layout.addWidget(splitter, stretch=1)
 
-
         self.as_status = QLabel("// ready")
         self.as_status.setStyleSheet("""
             background-color: #080808;
@@ -2043,6 +2102,17 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Attack surface exported to {path}")
     
     def _as_start_scan(self):
+        target = self.as_target.text().strip()
+        if not target or not is_valid_target(target):
+            self.as_status.setText("// error: invalid target — use a valid IP, CIDR or hostname")
+            self.as_status.setStyleSheet("""
+                background-color: #080808;
+                color: #ff4444;
+                font-size: 10px;
+                padding: 4px 12px;
+                border-top: 1px solid #1a1a1a;
+            """)
+            return
         self.scanning = True
         self.as_target.setDisabled(True)
         target = self.as_target.text().strip()

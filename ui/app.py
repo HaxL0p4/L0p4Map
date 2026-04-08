@@ -1493,7 +1493,6 @@ class MainWindow(QMainWindow):
         self._ta_add_row(packet_data)
     
         if self._ta_packet_count % 20 == 0 or self._ta_packet_count <= 5:
-            self._ta_add_row(packet_data)
             self._ta_update_device_list()
             self.ta_status.setText(
                 f"// {self._ta_packet_count} packets captured — {elapsed:.1f}s"
@@ -2247,47 +2246,19 @@ class MainWindow(QMainWindow):
         """)
 
     def _as_open_cve(self, item):
-        if item.column() != 0: 
+        if item.column() != 0:
             return
         url = item.data(Qt.ItemDataRole.UserRole)
         if not url:
             return
-        real_user = os.environ.get("SUDO_USER") or os.environ.get("USER", "")
-        if real_user and real_user != "root":
-            env = os.environ.copy()
-            try:
-                uidR = subprocess.run(
-                    ["id", "-u", real_user],
-                    capture_output=True, text=True
-                )
-                uid = uidR.stdout.strip()
-
-                busR = subprocess.run(
-                    ["sudo", "-u", real_user, "bash", "-c", f"cat /proc/$(pgrep -u {uid} -n)/environ 2>/dev/null | tr '\\0' '\\n' | grep -E 'DISPLAY|WAYLAND|DBUS|XDG_RUNTIME"],
-                    capture_output=True, text=True
-                )
-                for line in busR.stdout.splitlines():
-                    if "=" in line:
-                        k,v = line.split("=",1)
-                        env[k] = v
-            except Exception:
-                pass
-
+        try:
             subprocess.Popen(
-                ["sudo", "-u", real_user, "xdg-open", url],
+                ["xdg-open", url],
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                env=env
+                stderr=subprocess.DEVNULL
             )
-        else:
-            try:
-                subprocess.Popen(
-                    ["xdg-open", url],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
-                )
-            except Exception:
-                QDesktopServices.openUrl(QtUrl(url))
+        except Exception:
+            QDesktopServices.openUrl(QtUrl(url))
 
     def _as_update_history(self, target: str, result: dict):
         for row in range(self.as_history.rowCount()):

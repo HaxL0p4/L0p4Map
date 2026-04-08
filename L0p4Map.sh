@@ -55,4 +55,4 @@ if [ "$LOCAL" != "$REMOTE" ]; then
     exit 0
 fi
 
-sudo python3 ui/app.py
+sudo -E python3 ui/app.py

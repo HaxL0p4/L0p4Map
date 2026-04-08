@@ -2251,13 +2251,15 @@ class MainWindow(QMainWindow):
         url = item.data(Qt.ItemDataRole.UserRole)
         if not url:
             return
-        try:
+        
+        original_user = os.environ.get('SUDO_USER')
+        if original_user:
             subprocess.Popen(
-                ["xdg-open", url],
+                ["sudo", "-u", original_user, "xdg-open", url],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
             )
-        except Exception:
+        else:
             QDesktopServices.openUrl(QtUrl(url))
 
     def _as_update_history(self, target: str, result: dict):

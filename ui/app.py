@@ -1849,13 +1849,8 @@ class MainWindow(QMainWindow):
         self.as_scan_btn.setDisabled(True)
         self.as_scan_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.as_scan_btn.setStyleSheet("""
-            QPushButton {
-                border: 1px solid #00ff99 !important;                           
-            }
-            QPushButton:hover { 
-                color: #00ff99; 
-                font-size: 14px; 
-            }
+            QPushButton { border: 1px solid #00ff99 !important; }
+            QPushButton:hover { background-color: #001a0d; color: #00ff99; }
             QPushButton:pressed { font-size: 12px; }                          
         """)
         self.as_scan_btn.clicked.connect(self._as_start_scan)
@@ -1875,8 +1870,9 @@ class MainWindow(QMainWindow):
                 font-weight: bold;
                 letter-spacing: 1px;
             }
-            QPushButton:hover { background-color: #001a0d; }
+            QPushButton:hover { background-color: #001a0d;  }
             QPushButton:disabled { color: #333; border-color: #222; }
+            QPushButton:pressed { font-size: 12px; }
         """)
         self.as_export_btn.clicked.connect(self._as_export_csv)
         left_layout.addWidget(self.as_export_btn)

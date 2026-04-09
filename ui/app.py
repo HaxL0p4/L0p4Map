@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QTableWidget,
     QTableWidgetItem, QHeaderView, QTextEdit,
     QComboBox, QStackedWidget, QCheckBox, QLineEdit, QScrollArea,
-    QFileDialog, QSplashScreen, QMenu
+    QFileDialog, QSplashScreen, QMenu, QProgressBar
 )
 import ipaddress
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -227,8 +227,8 @@ class AttackSurfaceWorker(QThread):
         tmp.close()
 
         cmd = [
-            "nmap", "-sV", "-O", "-sC",
-            "--script", "vuln,vulners",
+            "nmap", "-sV", "-O",
+            "--script", "vulners",
             "--open", "-Pn", "-T4",
             "-oX", tmp_path,
             self.target
@@ -1937,6 +1937,36 @@ class MainWindow(QMainWindow):
         self.as_export_btn.clicked.connect(self._as_export_csv)
         left_layout.addWidget(self.as_export_btn)
 
+        self.as_progress_bar = QProgressBar()
+        self.as_progress_bar.setRange(0, 100)
+        self.as_progress_bar.setValue(0)
+        self.as_progress_bar.setTextVisible(True)
+        self.as_progress_bar.setFormat("%p%")
+        self.as_progress_bar.setFixedHeight(16)
+        self.as_progress_bar.setVisible(False)
+        self.as_progress_bar.setStyleSheet("""
+            QProgressBar {
+                background-color: #111111;
+                border: 1px solid #1a1a1a;
+                border-radius: 2px;
+                text-align: center;
+                color: #00ff99;
+                font-size: 9px;
+                font-family: 'JetBrains Mono', monospace;
+            }
+            QProgressBar::chunk {
+                background-color: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #003322, stop:1 #00ff99
+                );
+                border-radius: 2px;
+            }
+        """)
+        left_layout.addWidget(self.as_progress_bar)
+
+        sep = QWidget()
+        sep.setFixedHeight(1)
+
         sep = QWidget()
         sep.setFixedHeight(1)
         sep.setStyleSheet("background-color: #1a1a1a; margin-top: 4px; margin-bottom: 4px;")
@@ -2114,10 +2144,6 @@ class MainWindow(QMainWindow):
             return
         self.scanning = True
         self.as_target.setDisabled(True)
-        target = self.as_target.text().strip()
-        if not target:
-            return
-
         self.as_scan_btn.setEnabled(False)
         self.as_scan_btn.setText("[ SCANNING... ]")
         self.as_ports_table.setRowCount(0)
@@ -2130,7 +2156,18 @@ class MainWindow(QMainWindow):
             padding: 4px 12px;
             border-top: 1px solid #1a1a1a;
         """)
-
+        self.as_progress_bar.setValue(0)
+        self.as_progress_bar.setVisible(True)
+        def _tick():
+            v = self.as_progress_bar.value()
+            if v < 94:
+                remaining = 94 - v
+                step = max(1, remaining // 12)
+                self.as_progress_bar.setValue(v + step)
+        self._progress_timer = QTimer(self)
+        self._progress_timer.setInterval(2000)
+        self._progress_timer.timeout.connect(_tick)
+        self._progress_timer.start()
         self.as_worker = AttackSurfaceWorker(target)
         self.as_worker.status_update.connect(self.as_status.setText)
         self.as_worker.port_found.connect(self._as_add_port_realtime)
@@ -2150,10 +2187,17 @@ class MainWindow(QMainWindow):
         self.as_ports_table.setItem(row, 4, risk_item)
 
     def _as_on_finished(self, result: dict):
+        if hasattr(self, '_progress_timer'):
+            self._progress_timer.stop()
+        self.as_progress_bar.setValue(100)
+
         self.scanning = False
         self.as_target.setDisabled(False)
         self.as_scan_btn.setEnabled(True)
         self.as_scan_btn.setText("[ ANALYZE ]")
+
+        QTimer.singleShot(700, lambda: self.as_progress_bar.setVisible(False))
+
         self.as_ports_table.setRowCount(0)
         target = result["target"]
         self._as_results[target] = result

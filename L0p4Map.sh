@@ -55,4 +55,6 @@ if [ "$LOCAL" != "$REMOTE" ]; then
     exit 0
 fi
 
-sudo -E "$REPO_DIR/venv/bin/python3" ui/app.py
+PYTHON=$(command -v python3)
+[ -f "$REPO_DIR/venv/bin/python3" ] && PYTHON="$REPO_DIR/venv/bin/python3"
+sudo -E "$PYTHON" ui/app.py

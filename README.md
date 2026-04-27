@@ -82,6 +82,8 @@ No bloat. No BS. Just raw network intelligence.
 ```bash
 git clone https://github.com/HaxL0p4/L0p4Map.git
 cd L0p4Map
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 sudo chmod +x L0p4Map.sh
 ```

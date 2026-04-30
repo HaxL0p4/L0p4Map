@@ -1,4 +1,5 @@
 import sys
+import platform
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QSplitter,
@@ -2297,9 +2298,15 @@ class MainWindow(QMainWindow):
             return
         
         original_user = os.environ.get('SUDO_USER')
-        if original_user:
+        if original_user and platform.system() == "Linux":
             subprocess.Popen(
                 ["sudo", "-u", original_user, "xdg-open", url],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+        elif platform.system() == "Darwin":
+            subprocess.Popen(
+                ["open", url],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
             )

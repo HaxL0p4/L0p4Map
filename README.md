@@ -45,7 +45,6 @@ No bloat. No BS. Just raw network intelligence.
 
 ## 🚧 Upcoming Features
 
-- **CVE Links opening** — fix opening of CVE links
 - **Graph Persistence** — save and reload network topologies
 
 ---

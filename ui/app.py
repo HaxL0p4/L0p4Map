@@ -323,7 +323,7 @@ class AttackSurfaceWorker(QThread):
 
         port_cve_count = defaultdict(int)
 
-        for port in host.findall(".//port"):
+        for port in host.findall(".//port"): 
             state = port.find("state")
             if state is None or state.get("state") != "open":
                 continue
@@ -979,7 +979,7 @@ class MainWindow(QMainWindow):
         header_layout.setContentsMargins(12,0,12,0)
 
         header_label = QLabel("// network topology graph")
-        header_label.setStyleSheet("color: #444444; font-size: 11px; padding-right: 10px; padding-left: 10px; padin")
+        header_label.setStyleSheet("color: #444444; font-size: 11px; padding-right: 10px; padding-left: 10px;")
         header_layout.addWidget(header_label)
         header_layout.addSpacing(10)
 
@@ -1068,7 +1068,6 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(self.btn_live)
         layout.addWidget(header)
 
-        # web engine view con vis.js
         self.graph_view = QWebEngineView()
         self.graph_view.setStyleSheet("background-color: #0d0d0d;")
         self.graph_ready = False
@@ -1192,7 +1191,6 @@ class MainWindow(QMainWindow):
                 writer.writerow({k: p[k] for k in ["n","time","src","dst","proto","port","size"]})
         self.statusBar().showMessage(f"Traffic exported to {path}")
 
-    # ancora in beta
     def _build_trafficAnalyzer_page(self):
         page = QWidget()
         layout = QHBoxLayout(page)
@@ -1766,13 +1764,132 @@ class MainWindow(QMainWindow):
         self._update_graph(hosts)
         self.btn_export_graph.setDisabled(False)
 
+    def _build_topology(self, hosts: list) -> dict:
+        try:
+            iface = self.iface_selector.currentData()
+            subnet_str = get_local_subnet(iface["name"]) if iface else None
+        except Exception:
+            subnet_str = None
+
+        gateway_ip = None
+        gateway_candidates = []
+
+        for host in hosts:
+            ip = host.get("ip", "")
+            hostname = (host.get("hostname") or "").lower()
+            vendor = (host.get("vendor") or "").lower()
+            if hostname in ("router", "gateway", "_gateway", "default-gateway"):
+                gateway_ip = ip
+                break
+            if ip.endswith(".1") or ip.endswith(".254"):
+                gateway_candidates.insert(0, ip) if ip.endswith(".1") else gateway_candidates.append(ip)
+
+        if not gateway_ip and gateway_candidates:
+            gateway_ip = gateway_candidates[0]
+
+        subnets_map = {}
+        if subnet_str:
+            try:
+                net = ipaddress.ip_network(subnet_str, strict=False)
+                subnets_map[subnet_str] = {
+                    "network": subnet_str,
+                    "prefix": str(net.prefixlen),
+                    "broadcast": str(net.broadcast_address),
+                    "devices": [],
+                }
+            except Exception:
+                pass
+
+        for host in hosts:
+            ip = host.get("ip", "")
+            placed = False
+            for snet_str, snet_data in subnets_map.items():
+                try:
+                    if ipaddress.ip_address(ip) in ipaddress.ip_network(snet_str, strict=False):
+                        snet_data["devices"].append(ip)
+                        placed = True
+                        break
+                except Exception:
+                    pass
+            if not placed and subnets_map:
+                list(subnets_map.values())[0]["devices"].append(ip)
+
+        intermediate_vendors = [
+            "cisco", "mikrotik", "ubiquiti", "tp-link", "netgear", "dlink",
+            "linksys", "tenda", "zyxel", "aruba", "juniper", "fortinet",
+            "ruckus", "meraki", "extreme", "huawei", "h3c", "brocade",
+        ]
+        intermediate_hostnames = [
+            "router", "ap", "wifi", "switch", "hub", "access-point",
+            "access_point", "wlan", "gateway", "firewall", "proxy",
+        ]
+
+        intermediate_ips = set()
+        for host in hosts:
+            ip = host.get("ip", "")
+            if ip == gateway_ip:
+                continue
+            vendor = (host.get("vendor") or "").lower()
+            hostname = (host.get("hostname") or "").lower()
+            if any(k in vendor for k in intermediate_vendors):
+                intermediate_ips.add(ip)
+                continue
+            if any(k in hostname for k in intermediate_hostnames):
+                intermediate_ips.add(ip)
+
+        edges = []
+        if gateway_ip:
+            edges.append({"src": gateway_ip, "dst": "internet", "type": "uplink"})
+
+        for host in hosts:
+            ip = host.get("ip", "")
+            if ip == gateway_ip:
+                continue
+            if not gateway_ip:
+                continue
+            if ip in intermediate_ips:
+                edges.append({"src": ip, "dst": gateway_ip, "type": "backbone"})
+            else:
+                parent = gateway_ip
+                for inter_ip in intermediate_ips:
+                    inter_host = next((h for h in hosts if h.get("ip") == inter_ip), None)
+                    if not inter_host:
+                        continue
+                    inter_vendor = (inter_host.get("vendor") or "").lower()
+                    inter_hostname = (inter_host.get("hostname") or "").lower()
+                    if any(k in inter_vendor for k in ["tp-link", "netgear", "dlink", "linksys",
+                                                        "tenda", "zyxel", "aruba", "ubiquiti",
+                                                        "ruckus", "meraki"]) or \
+                       any(k in inter_hostname for k in ["ap", "wifi", "wlan", "access"]):
+                        try:
+                            host_net = ipaddress.ip_address(ip)
+                            inter_net = ipaddress.ip_address(inter_ip)
+                            host_parts = str(host_net).split(".")
+                            inter_parts = str(inter_net).split(".")
+                            if host_parts[:3] == inter_parts[:3]:
+                                parent = inter_ip
+                                break
+                        except Exception:
+                            pass
+                edges.append({"src": ip, "dst": parent, "type": "client"})
+
+        return {
+            "devices": hosts,
+            "gateway": gateway_ip,
+            "subnet": subnet_str,
+            "subnets": list(subnets_map.values()),
+            "edges": edges,
+            "intermediates": list(intermediate_ips),
+        }
+
     def _update_graph(self, hosts):
         if not hasattr(self, 'graph_view'):
             return
         if not self.graph_ready:
             self._pending_graph_data = hosts
             return
-        data = json.dumps(hosts)
+        topology = self._build_topology(hosts)
+        data = json.dumps(topology)
         data = data.replace("'", "\\'")
         self.graph_view.page().runJavaScript(f"updateGraph('{data}')")
 
@@ -1963,9 +2080,6 @@ class MainWindow(QMainWindow):
             }
         """)
         left_layout.addWidget(self.as_progress_bar)
-
-        sep = QWidget()
-        sep.setFixedHeight(1)
 
         sep = QWidget()
         sep.setFixedHeight(1)

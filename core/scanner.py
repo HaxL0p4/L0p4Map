@@ -1,15 +1,36 @@
 import ipaddress
 import socket
+import struct
 import psutil
-import requests
 import csv as _csv
-from scapy.all import ARP, Ether, srp, sniff, IP as ScapyIP, TCP,UDP
+from scapy.all import ARP, Ether, srp, sniff, IP as ScapyIP, TCP, UDP, ICMP, sr1, conf
 import os
-from concurrent.futures import ThreadPoolExecutor
+import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 
 _vendor_cache: dict[str, str] = {}
 _oui_db: dict[str, str] = {}
+
+TOPOLOGY_PROBE_PORTS = [80, 443, 22, 23, 53, 8080, 8443, 179, 161, 8291, 2601, 4786]
+
+NETWORK_DEVICE_VENDORS = [
+    "cisco", "mikrotik", "ubiquiti", "juniper", "fortinet", "palo alto",
+    "aruba", "ruckus", "meraki", "extreme", "brocade", "h3c", "huawei",
+    "zyxel", "dlink", "tp-link", "netgear", "linksys", "tenda",
+    "openwrt", "dd-wrt", "edgecore", "cambium", "aerohive",
+]
+
+PC_VENDORS = [
+    "intel", "dell", "lenovo", "hp", "hewlett", "acer", "gigabyte",
+    "msi", "asrock", "asus", "supermicro", "fujitsu",
+]
+
+MOBILE_VENDORS = [
+    "samsung", "xiaomi", "oneplus", "oppo", "realme", "motorola",
+    "lg electronics", "sony mobile", "zte",
+]
+
 
 def capture_traffic(iface: str, duration: int = 15) -> list[dict]:
     connections = defaultdict(lambda: {"packets": 0, "bytes": 0, "proto": "OTHER", "port": "-"})
@@ -47,10 +68,11 @@ def capture_traffic(iface: str, duration: int = 15) -> list[dict]:
             "bytes": data["bytes"],
             "proto": data["proto"],
             "port": data["port"],
-            "weight":min(data["packets"] /10, 10)
+            "weight": min(data["packets"] / 10, 10),
         })
 
     return sorted(edges, key=lambda e: e["packets"], reverse=True)
+
 
 def _load_oui_db():
     global _oui_db
@@ -66,6 +88,7 @@ def _load_oui_db():
             name = row.get("Organization Name", "").strip()
             if oui and name:
                 _oui_db[oui] = name
+
 
 def get_network_interfaces():
     interfaces = []
@@ -83,9 +106,11 @@ def get_network_interfaces():
         interfaces.append({"name": iface, "ip": ip})
     return interfaces
 
+
 def check_root():
     if os.getuid() != 0:
         raise PermissionError("Execute the program with SUDO!")
+
 
 def get_local_subnet(iface_name=None) -> str:
     interfaces = psutil.net_if_addrs()
@@ -112,6 +137,40 @@ def get_local_subnet(iface_name=None) -> str:
                     f"{ip}/{addr.netmask}", strict=False))
     raise RuntimeError("No active interface found.")
 
+
+def get_default_gateway() -> str | None:
+    try:
+        with open("/proc/net/route") as f:
+            for line in f.readlines()[1:]:
+                fields = line.strip().split()
+                if len(fields) < 3:
+                    continue
+                if fields[1] == "00000000":
+                    gw_hex = fields[2]
+                    gw_int = int(gw_hex, 16)
+                    gw = socket.inet_ntoa(struct.pack("<I", gw_int))
+                    if gw and not gw.startswith("0."):
+                        return gw
+    except Exception:
+        pass
+    try:
+        out = subprocess.check_output(
+            ["ip", "route", "show", "default"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        for token in out.split():
+            if token not in ("default", "via", "dev", "proto", "metric", "src"):
+                try:
+                    ipaddress.ip_address(token)
+                    return token
+                except ValueError:
+                    pass
+    except Exception:
+        pass
+    return None
+
+
 def get_vendor(mac: str) -> str:
     global _vendor_cache
     oui = mac.replace(":", "").replace("-", "").upper()[:6]
@@ -125,6 +184,7 @@ def get_vendor(mac: str) -> str:
     _vendor_cache[oui] = "Unknown"
     return "Unknown"
 
+
 def _dns_hostname(ip: str) -> str | None:
     try:
         name = socket.gethostbyaddr(ip)[0]
@@ -133,6 +193,7 @@ def _dns_hostname(ip: str) -> str | None:
     except socket.herror:
         pass
     return None
+
 
 def _netbios_hostname(ip: str) -> str | None:
     try:
@@ -155,17 +216,8 @@ def _netbios_hostname(ip: str) -> str | None:
         pass
     return None
 
+
 def _mdns_hostname(ip: str) -> str | None:
-    try:
-        reversed_ip = ".".join(reversed(ip.split(".")))
-        ptr = f"{reversed_ip}.in-addr.arpa"
-        result = socket.getaddrinfo(ptr, None)
-        if result:
-            name = result[0][4][0]
-            if name and name != ip:
-                return name
-    except Exception:
-        pass
     try:
         old_timeout = socket.getdefaulttimeout()
         socket.setdefaulttimeout(1)
@@ -176,6 +228,7 @@ def _mdns_hostname(ip: str) -> str | None:
     except Exception:
         pass
     return None
+
 
 def resolve_hostname(ip: str) -> str:
     name = _dns_hostname(ip)
@@ -189,16 +242,206 @@ def resolve_hostname(ip: str) -> str:
         return name
     return ip
 
-def scan_network(subnet: str) -> list[dict]:
-    pacchetto = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=subnet)
-    risposte, _ = srp(pacchetto, timeout=2, retry=2, inter=0.01 ,verbose=False)
 
-    seen_macs = {}
+def _probe_ttl(ip: str) -> int | None:
+    try:
+        pkt = ScapyIP(dst=ip, ttl=64) / ICMP()
+        reply = sr1(pkt, timeout=1, verbose=False)
+        if reply and ICMP in reply:
+            return reply[ScapyIP].ttl
+    except Exception:
+        pass
+    return None
+
+
+def _ttl_to_os_hint(ttl: int | None) -> str:
+    if ttl is None:
+        return "unknown"
+    if ttl <= 64:
+        return "linux/macos"
+    if ttl <= 128:
+        return "windows"
+    return "network_device"
+
+
+def _probe_open_ports(ip: str, ports: list[int], timeout: float = 0.5) -> list[int]:
+    open_ports = []
+    for port in ports:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            result = sock.connect_ex((ip, port))
+            sock.close()
+            if result == 0:
+                open_ports.append(port)
+        except Exception:
+            pass
+    return open_ports
+
+
+def _infer_role(
+    ip: str,
+    vendor: str,
+    hostname: str,
+    ttl: int | None,
+    open_ports: list[int],
+    is_gateway: bool,
+) -> str:
+    v = vendor.lower()
+    h = hostname.lower()
+    os_hint = _ttl_to_os_hint(ttl)
+
+    if is_gateway:
+        return "gateway"
+
+    if h in ("router", "gateway", "_gateway", "default-gateway"):
+        return "gateway"
+
+    if any(k in v for k in ["cisco", "mikrotik", "ubiquiti", "juniper",
+                              "fortinet", "edgecore", "brocade", "h3c"]):
+        if any(p in open_ports for p in [22, 23, 179, 8291, 2601, 4786]):
+            return "router"
+        return "router"
+
+    if any(k in v for k in ["tp-link", "netgear", "dlink", "linksys", "tenda",
+                              "zyxel", "aruba", "ruckus", "meraki", "cambium",
+                              "aerohive", "ubiquiti"]):
+        if any(p in open_ports for p in [80, 443, 8080, 8443]):
+            return "ap"
+        return "ap"
+
+    if any(k in h for k in ["router", "gw", "gateway", "firewall", "pfsense",
+                              "opnsense", "vyos", "mikrotik"]):
+        return "router"
+
+    if any(k in h for k in ["ap", "wifi", "wlan", "wireless", "access-point",
+                              "access_point", "hotspot", "ssid"]):
+        return "ap"
+
+    if any(k in h for k in ["switch", "sw-", "sw_", "core-sw", "dist-sw"]):
+        return "switch"
+
+    if any(k in v for k in ["raspberry"]) or "raspberry" in h:
+        return "raspberry"
+
+    if any(k in v for k in ["vmware", "virtualbox", "proxmox", "parallels"]):
+        return "vm"
+
+    if any(k in v for k in ["apple"]) or any(k in h for k in ["iphone", "ipad", "macbook", "imac", "apple"]):
+        return "apple"
+
+    if any(k in v for k in ["samsung", "xiaomi", "oneplus", "oppo", "realme",
+                              "motorola", "lg electronics", "sony mobile", "zte"]):
+        return "mobile"
+    if any(k in h for k in ["android", "iphone", "phone", "mobile"]):
+        return "mobile"
+
+    if os_hint == "network_device":
+        if any(p in open_ports for p in [80, 443, 8080]):
+            return "ap"
+        return "router"
+
+    if any(k in v for k in PC_VENDORS):
+        return "pc"
+    if any(k in h for k in ["desktop", "pc-", "-pc", "workstation", "laptop",
+                              "linux", "windows", "ubuntu", "debian", "fedora"]):
+        return "pc"
+
+    if os_hint == "linux/macos" and 22 in open_ports:
+        return "pc"
+
+    if os_hint == "windows" and any(p in open_ports for p in [135, 139, 445]):
+        return "pc"
+
+    return "unknown"
+
+
+def _probe_snmp_sysdescr(ip: str) -> str | None:
+    try:
+        community = b"public"
+        oid = b"\x2b\x06\x01\x02\x01\x01\x01\x00"
+        request = (
+            b"\x30\x29"
+            b"\x02\x01\x00"
+            b"\x04" + bytes([len(community)]) + community +
+            b"\xa0\x1c"
+            b"\x02\x04\x00\x00\x00\x01"
+            b"\x02\x01\x00"
+            b"\x02\x01\x00"
+            b"\x30\x0e"
+            b"\x30\x0c"
+            b"\x06\x08" + oid +
+            b"\x05\x00"
+        )
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(1.0)
+        sock.sendto(request, (ip, 161))
+        data, _ = sock.recvfrom(1024)
+        sock.close()
+        if data and len(data) > 30:
+            payload = data[30:]
+            try:
+                return payload.decode("ascii", errors="ignore").strip()
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return None
+
+
+def _enrich_host(host: dict, known_gateway_ip: str | None) -> dict:
+    ip = host["ip"]
+    host["hostname"] = resolve_hostname(ip)
+    host["vendor"] = get_vendor(host["mac"])
+
+    ttl = _probe_ttl(ip)
+    host["ttl"] = ttl
+    host["os_hint"] = _ttl_to_os_hint(ttl)
+
+    open_ports = _probe_open_ports(ip, TOPOLOGY_PROBE_PORTS, timeout=0.4)
+    host["open_ports"] = open_ports
+
+    snmp_desc = None
+    if 161 in open_ports or ttl is None or (ttl is not None and ttl > 128):
+        snmp_desc = _probe_snmp_sysdescr(ip)
+    host["snmp_desc"] = snmp_desc or ""
+
+    vendor_for_role = host["vendor"]
+    if snmp_desc:
+        vendor_for_role = snmp_desc + " " + vendor_for_role
+
+    is_gw = (ip == known_gateway_ip)
+    host["role"] = _infer_role(
+        ip,
+        vendor_for_role,
+        host["hostname"],
+        ttl,
+        open_ports,
+        is_gw,
+    )
+
+    return host
+
+
+def scan_network(subnet: str) -> list[dict]:
+    conf.verb = 0
+
+    known_gateway = get_default_gateway()
+
+    pacchetto = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=subnet)
+    risposte, _ = srp(pacchetto, timeout=2, retry=2, inter=0.01, verbose=False)
+
+    seen_macs: dict[str, str] = {}
     for _, risposta in risposte:
         mac = risposta[Ether].src
         ip = risposta[ARP].psrc
         if mac not in seen_macs:
             seen_macs[mac] = ip
+
+    if known_gateway and known_gateway not in seen_macs.values():
+        gw_mac = _arp_resolve_mac(known_gateway, subnet)
+        if gw_mac:
+            seen_macs[gw_mac] = known_gateway
 
     hosts = []
     for mac, ip in seen_macs.items():
@@ -207,15 +450,35 @@ def scan_network(subnet: str) -> list[dict]:
             "mac": mac,
             "hostname": ip,
             "vendor": "...",
+            "ttl": None,
+            "os_hint": "unknown",
+            "open_ports": [],
+            "role": "unknown",
+            "snmp_desc": "",
         })
 
-    def enrich(host):
-        host["hostname"] = resolve_hostname(host["ip"])
-        host["vendor"] = get_vendor(host["mac"])
-        return host
-
-    with ThreadPoolExecutor(max_workers=20) as executor:
-        results = list(executor.map(enrich, hosts))
+    with ThreadPoolExecutor(max_workers=16) as executor:
+        futures = {
+            executor.submit(_enrich_host, host, known_gateway): host
+            for host in hosts
+        }
+        results = []
+        for future in as_completed(futures):
+            try:
+                results.append(future.result())
+            except Exception:
+                results.append(futures[future])
 
     results.sort(key=lambda h: [int(x) for x in h["ip"].split(".")])
     return results
+
+
+def _arp_resolve_mac(ip: str, subnet: str) -> str | None:
+    try:
+        pkt = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=ip)
+        ans, _ = srp(pkt, timeout=1, retry=1, verbose=False)
+        for _, reply in ans:
+            return reply[Ether].src
+    except Exception:
+        pass
+    return None

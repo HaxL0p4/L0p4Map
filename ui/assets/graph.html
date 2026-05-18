@@ -16,6 +16,7 @@
     font-size: 11px !important;
     padding: 10px 12px !important;
     box-shadow: 0 0 12px #00ff9922 !important;
+    max-width: 260px !important;
   }
 
   #legend {
@@ -44,6 +45,15 @@
     border: 2px solid;
     flex-shrink: 0;
   }
+  #legend .edge-sample {
+    width: 22px;
+    height: 2px;
+    flex-shrink: 0;
+  }
+  #legend .sep {
+    border-top: 1px solid #1a1a1a;
+    margin: 6px 0;
+  }
 
   #counter {
     position: absolute;
@@ -54,6 +64,47 @@
     color: #333;
     pointer-events: none;
   }
+
+  #topo-panel {
+    position: absolute;
+    top: 10px;
+    left: 16px;
+    background: #0e0e0e;
+    border: 1px solid #1a1a1a;
+    padding: 8px 12px;
+    font-family: monospace;
+    font-size: 10px;
+    color: #444;
+    z-index: 100;
+    pointer-events: none;
+    min-width: 190px;
+  }
+  #topo-panel .tp-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 3px;
+  }
+  #topo-panel .tp-label { color: #333; }
+  #topo-panel .tp-value { color: #00ff9977; text-align: right; font-size: 10px; }
+
+  #layout-btn {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    background: #111111;
+    border: 1px solid #1a1a1a;
+    color: #444;
+    font-family: monospace;
+    font-size: 10px;
+    padding: 6px 12px;
+    cursor: pointer;
+    z-index: 100;
+    letter-spacing: 1px;
+    user-select: none;
+  }
+  #layout-btn:hover { border-color: #00ff9966; color: #00ff9988; }
+  #layout-btn.active { border-color: #00ff9944; color: #00ff9966; }
 </style>
 <link rel="stylesheet" href="vis-network.min.css">
 <script src="vis-network.min.js"></script>
@@ -61,123 +112,55 @@
 <body>
 <div id="graph"></div>
 
+<div id="topo-panel">
+  <div class="tp-row"><span class="tp-label">SUBNET</span><span class="tp-value" id="tp-subnet">—</span></div>
+  <div class="tp-row"><span class="tp-label">GATEWAY</span><span class="tp-value" id="tp-gateway">—</span></div>
+  <div class="tp-row"><span class="tp-label">DEVICES</span><span class="tp-value" id="tp-devices">0</span></div>
+  <div class="tp-row"><span class="tp-label">INTERMEDIATES</span><span class="tp-value" id="tp-intermediates">0</span></div>
+</div>
+
 <div id="legend">
   <div class="item"><div class="dot" style="border-color:#00ff99;background:#003322"></div> Gateway</div>
   <div class="item"><div class="dot" style="border-color:#00ccff;background:#001a33"></div> Router</div>
   <div class="item"><div class="dot" style="border-color:#ff9900;background:#332200"></div> Access Point</div>
+  <div class="item"><div class="dot" style="border-color:#00aaff;background:#001a2e"></div> Switch</div>
   <div class="item"><div class="dot" style="border-color:#5555ff;background:#1a1a2e"></div> PC / Workstation</div>
   <div class="item"><div class="dot" style="border-color:#aaaaaa;background:#1a1a1a"></div> Apple Device</div>
   <div class="item"><div class="dot" style="border-color:#ff5599;background:#2e1a2e"></div> Mobile</div>
   <div class="item"><div class="dot" style="border-color:#cc0000;background:#2e0000"></div> Raspberry Pi</div>
   <div class="item"><div class="dot" style="border-color:#9900ff;background:#1a0033"></div> Virtual Machine</div>
   <div class="item"><div class="dot" style="border-color:#444444;background:#1a1a1a"></div> Unknown</div>
+  <div class="sep"></div>
+  <div class="item">
+    <div class="edge-sample" style="background:repeating-linear-gradient(90deg,#333 0,#333 4px,transparent 4px,transparent 8px)"></div>
+    Uplink
+  </div>
+  <div class="item">
+    <div class="edge-sample" style="background:#00ccff44;height:2px"></div>
+    Backbone
+  </div>
+  <div class="item">
+    <div class="edge-sample" style="background:#222;height:1px"></div>
+    Client link
+  </div>
 </div>
 
 <div id="counter">// 0 devices</div>
 
+<div id="layout-btn" class="active" onclick="toggleLayout()">[ HIERARCHICAL ]</div>
+
 <script>
-const VENDOR_ROLES = {
-  router:    ["cisco", "mikrotik", "ubiquiti", "openwrt", "dd-wrt", "juniper", "fortinet"],
-  ap:        ["tp-link", "netgear", "dlink", "linksys", "tenda", "zyxel", "aruba"],
-  pc:        ["intel", "dell", "lenovo", "hp", "acer", "gigabyte", "msi", "asrock", "asus"],
-  apple:     ["apple"],
-  mobile:    ["samsung", "xiaomi", "oneplus", "huawei", "oppo", "realme", "motorola"],
-  raspberry: ["raspberry"],
-  vm:        ["vmware", "virtualbox", "parallels", "proxmox"],
-};
+let network = null;
+let currentTopology = null;
+let hierarchicalMode = true;
+let subnetsForDraw = [];
 
-function getRole(device) {
-  const ip = device.ip || "";
-  const vendor = (device.vendor || "").toLowerCase();
-  const hostname = (device.hostname || "").toLowerCase();
-
-  // Gateway
-  if (
-    ip.endsWith(".1") ||
-    ip.endsWith(".254") ||
-    hostname === "router" ||
-    hostname === "gateway"
-  ) {
-    return "gateway";
-  }
-
-  // Router / AP 
-  if (hostname.includes("router")) return "router";
-  if (hostname.includes("ap") || hostname.includes("wifi")) return "ap";
-
-  // Router vendor
-  if (
-    vendor.includes("cisco") ||
-    vendor.includes("mikrotik") ||
-    vendor.includes("ubiquiti") ||
-    vendor.includes("juniper") ||
-    vendor.includes("fortinet")
-  ) {
-    return "router";
-  }
-
-  // AP vendor
-  if (
-    vendor.includes("tp-link") ||
-    vendor.includes("netgear") ||
-    vendor.includes("dlink") ||
-    vendor.includes("linksys") ||
-    vendor.includes("tenda") ||
-    vendor.includes("zyxel") ||
-    vendor.includes("aruba")
-  ) {
-    return "ap";
-  }
-
-  // apple
-  if (
-    vendor.includes("apple") ||
-    hostname.includes("iphone") ||
-    hostname.includes("ipad") ||
-    hostname.includes("macbook")
-  ) {
-    return "apple";
-  }
-
-  // mobile
-  if (
-    vendor.includes("samsung") ||
-    vendor.includes("xiaomi") ||
-    vendor.includes("oneplus") ||
-    vendor.includes("huawei") ||
-    hostname.includes("android")
-  ) {
-    return "mobile";
-  }
-
-  // Raspberry
-  if (vendor.includes("raspberry")) return "raspberry";
-
-  // VM
-  if (
-    vendor.includes("vmware") ||
-    vendor.includes("virtualbox") ||
-    vendor.includes("proxmox")
-  ) {
-    return "vm";
-  }
-
-  // PC
-  if (
-    vendor.includes("intel") ||
-    vendor.includes("dell") ||
-    vendor.includes("hp") ||
-    vendor.includes("lenovo") ||
-    vendor.includes("asus") ||
-    hostname.includes("desktop") ||
-    hostname.includes("pc") ||
-    hostname.includes("linux") ||
-    hostname.includes("windows")
-  ) {
-    return "pc";
-  }
-
-  return "unknown";
+function toggleLayout() {
+  hierarchicalMode = !hierarchicalMode;
+  const btn = document.getElementById("layout-btn");
+  btn.textContent = hierarchicalMode ? "[ HIERARCHICAL ]" : "[ FORCE ATLAS ]";
+  btn.className = hierarchicalMode ? "active" : "";
+  if (currentTopology) _renderTopology(currentTopology);
 }
 
 function getRoleStyle(role) {
@@ -185,6 +168,7 @@ function getRoleStyle(role) {
     gateway:   { bg: "#003322", border: "#00ff99", size: 30, label: "GATEWAY" },
     router:    { bg: "#001a33", border: "#00ccff", size: 24, label: "ROUTER" },
     ap:        { bg: "#332200", border: "#ff9900", size: 22, label: "ACCESS POINT" },
+    switch:    { bg: "#001a2e", border: "#00aaff", size: 22, label: "SWITCH" },
     pc:        { bg: "#1a1a2e", border: "#5555ff", size: 16, label: "PC" },
     apple:     { bg: "#1a1a1a", border: "#aaaaaa", size: 16, label: "APPLE" },
     mobile:    { bg: "#2e1a2e", border: "#ff5599", size: 14, label: "MOBILE" },
@@ -195,8 +179,34 @@ function getRoleStyle(role) {
   return styles[role] || styles.unknown;
 }
 
+function getRole(device) {
+  if (device.role && device.role !== "unknown") return device.role;
+  const ip = device.ip || "";
+  const vendor = (device.vendor || "").toLowerCase();
+  const hostname = (device.hostname || "").toLowerCase();
+  if (ip.endsWith(".1") || ip.endsWith(".254") || hostname === "router" || hostname === "gateway") return "gateway";
+  if (hostname.includes("switch")) return "switch";
+  if (hostname.includes("router")) return "router";
+  if (hostname.includes("ap") || hostname.includes("wifi")) return "ap";
+  if (vendor.includes("cisco") || vendor.includes("mikrotik") || vendor.includes("ubiquiti") || vendor.includes("juniper") || vendor.includes("fortinet")) return "router";
+  if (vendor.includes("tp-link") || vendor.includes("netgear") || vendor.includes("dlink") || vendor.includes("linksys") || vendor.includes("tenda") || vendor.includes("zyxel") || vendor.includes("aruba")) return "ap";
+  if (vendor.includes("apple") || hostname.includes("iphone") || hostname.includes("ipad") || hostname.includes("macbook")) return "apple";
+  if (vendor.includes("samsung") || vendor.includes("xiaomi") || vendor.includes("oneplus") || hostname.includes("android")) return "mobile";
+  if (vendor.includes("raspberry")) return "raspberry";
+  if (vendor.includes("vmware") || vendor.includes("virtualbox") || vendor.includes("proxmox")) return "vm";
+  if (vendor.includes("intel") || vendor.includes("dell") || vendor.includes("hp") || vendor.includes("lenovo") || vendor.includes("asus") || hostname.includes("desktop") || hostname.includes("pc") || hostname.includes("linux") || hostname.includes("windows")) return "pc";
+  return "unknown";
+}
+
 function makeTooltip(role, device, style) {
   const el = document.createElement("div");
+  const ports = (device.open_ports && device.open_ports.length) ? device.open_ports.join(", ") : "—";
+  const ttl = device.ttl != null ? device.ttl : "—";
+  const osHint = device.os_hint && device.os_hint !== "unknown" ? device.os_hint : "—";
+  const snmpRow = device.snmp_desc
+    ? `<div style="color:#888;margin-bottom:2px;margin-top:2px">SNMP</div>
+       <div style="color:#aaaaaa;margin-bottom:0;font-size:10px;word-break:break-all">${device.snmp_desc.substring(0, 80)}${device.snmp_desc.length > 80 ? "…" : ""}</div>`
+    : "";
   el.innerHTML = `
     <div style="color:${style.border};font-weight:bold;margin-bottom:6px;letter-spacing:1px">${style.label}</div>
     <div style="color:#888;margin-bottom:2px">IP</div>
@@ -206,140 +216,320 @@ function makeTooltip(role, device, style) {
     <div style="color:#888;margin-bottom:2px">VENDOR</div>
     <div style="color:#e0e0e0;margin-bottom:6px">${device.vendor || "Unknown"}</div>
     <div style="color:#888;margin-bottom:2px">HOSTNAME</div>
-    <div style="color:#e0e0e0">${device.hostname}</div>
+    <div style="color:#e0e0e0;margin-bottom:6px">${device.hostname}</div>
+    <div style="display:flex;gap:16px;margin-bottom:6px">
+      <div><div style="color:#888;margin-bottom:2px">TTL</div><div style="color:#e0e0e0">${ttl}</div></div>
+      <div><div style="color:#888;margin-bottom:2px">OS HINT</div><div style="color:#e0e0e0">${osHint}</div></div>
+    </div>
+    <div style="color:#888;margin-bottom:2px">OPEN PORTS</div>
+    <div style="color:#e0e0e0;margin-bottom:${snmpRow ? "6px" : "0"}">${ports}</div>
+    ${snmpRow}
   `;
   return el;
 }
 
-const options = {
-  nodes: {
-    shape: "dot",
-    font: { color: "#666666", face: "monospace", size: 10 },
-    borderWidth: 2,
-    shadow: { enabled: true, color: "rgba(0,0,0,0.5)", size: 8 },
-  },
-  edges: {
-    arrows: { to: { enabled: true, scaleFactor: 0.5, type: "arrow" } },
-    color: { color: "#1a1a1a", highlight: "#00ff99", hover: "#333333" },
+function makeInternetTooltip() {
+  const el = document.createElement("div");
+  el.innerHTML = `<div style="color:#555;font-weight:bold;letter-spacing:1px">INTERNET</div><div style="color:#333;font-size:10px;margin-top:4px">External network uplink</div>`;
+  return el;
+}
+
+function getEdgeStyle(type) {
+  if (type === "uplink") return {
+    dashes: [6, 4],
+    color: { color: "#222222", highlight: "#444444", hover: "#333333" },
+    arrows: { to: { enabled: true, scaleFactor: 0.4, type: "arrow" } },
     width: 1,
+    smooth: { type: "curvedCW", roundness: 0.2 },
+  };
+  if (type === "backbone") return {
+    dashes: false,
+    color: { color: "#00ccff2a", highlight: "#00ccff88", hover: "#00ccff44" },
+    arrows: { to: { enabled: true, scaleFactor: 0.5, type: "arrow" } },
+    width: 2,
     smooth: { type: "curvedCW", roundness: 0.15 },
-    shadow: false,
-  },
-  physics: {
-    enabled: true,
-    solver: "forceAtlas2Based",
-    forceAtlas2Based: {
-      gravitationalConstant: -60,
-      centralGravity: 0.005,
-      springLength: 140,
-      springConstant: 0.06,
-      damping: 0.9,
-    },
-    stabilization: { iterations: 200, updateInterval: 25 }
-  },
-  interaction: {
-    hover: true,
-    tooltipDelay: 80,
-    zoomView: true,
-    dragView: true,
+  };
+  return {
+    dashes: false,
+    color: { color: "#1a1a1a", highlight: "#00ff9944", hover: "#252525" },
+    arrows: { to: { enabled: true, scaleFactor: 0.35, type: "arrow" } },
+    width: 1,
+    smooth: { type: "curvedCW", roundness: 0.12 },
+  };
+}
+
+function buildOptions() {
+  if (hierarchicalMode) {
+    return {
+      nodes: {
+        shape: "dot",
+        font: { color: "#666666", face: "monospace", size: 10 },
+        borderWidth: 2,
+        shadow: { enabled: true, color: "rgba(0,0,0,0.6)", size: 10 },
+      },
+      edges: { shadow: false },
+      layout: {
+        hierarchical: {
+          enabled: true,
+          direction: "UD",
+          sortMethod: "directed",
+          levelSeparation: 140,
+          nodeSpacing: 110,
+          treeSpacing: 160,
+          blockShifting: true,
+          edgeMinimization: true,
+          parentCentralization: true,
+        },
+      },
+      physics: {
+        enabled: true,
+        solver: "hierarchicalRepulsion",
+        hierarchicalRepulsion: {
+          centralGravity: 0.0,
+          springLength: 110,
+          springConstant: 0.005,
+          nodeDistance: 130,
+          damping: 0.12,
+          avoidOverlap: 1,
+        },
+        stabilization: { iterations: 400, updateInterval: 20 },
+      },
+      interaction: {
+        hover: true,
+        tooltipDelay: 80,
+        zoomView: true,
+        dragView: true,
+        dragNodes: true,
+      },
+    };
   }
-};
+  return {
+    nodes: {
+      shape: "dot",
+      font: { color: "#666666", face: "monospace", size: 10 },
+      borderWidth: 2,
+      shadow: { enabled: true, color: "rgba(0,0,0,0.5)", size: 8 },
+    },
+    edges: { shadow: false },
+    layout: { hierarchical: { enabled: false } },
+    physics: {
+      enabled: true,
+      solver: "forceAtlas2Based",
+      forceAtlas2Based: {
+        gravitationalConstant: -70,
+        centralGravity: 0.006,
+        springLength: 150,
+        springConstant: 0.05,
+        damping: 0.9,
+        avoidOverlap: 0.5,
+      },
+      stabilization: { iterations: 300, updateInterval: 25 },
+    },
+    interaction: {
+      hover: true,
+      tooltipDelay: 80,
+      zoomView: true,
+      dragView: true,
+      dragNodes: true,
+    },
+  };
+}
 
-let network = null;
+function updateTopoPanel(subnet, gateway, deviceCount, intermediateCount) {
+  document.getElementById("tp-subnet").textContent = subnet || "—";
+  document.getElementById("tp-gateway").textContent = gateway || "—";
+  document.getElementById("tp-devices").textContent = deviceCount;
+  document.getElementById("tp-intermediates").textContent = intermediateCount;
+}
 
-function updateGraph(devicesJson) {
-  const devices = JSON.parse(devicesJson);
+function _drawSubnetBoxes(ctx) {
+  if (!hierarchicalMode || subnetsForDraw.length === 0) return;
+  subnetsForDraw.forEach(function(snet) {
+    const ips = snet.devices || [];
+    if (ips.length < 1) return;
+    const positions = ips.map(function(ip) {
+      try { return network.getPosition(ip); } catch(e) { return null; }
+    }).filter(function(p) { return p !== null; });
+    if (positions.length < 1) return;
+
+    const xs = positions.map(function(p) { return p.x; });
+    const ys = positions.map(function(p) { return p.y; });
+    const pad = 55;
+    const x1 = Math.min.apply(null, xs) - pad;
+    const y1 = Math.min.apply(null, ys) - pad;
+    const x2 = Math.max.apply(null, xs) + pad;
+    const y2 = Math.max.apply(null, ys) + pad;
+
+    ctx.save();
+    ctx.setLineDash([5, 5]);
+    ctx.strokeStyle = "#00ff9918";
+    ctx.fillStyle = "#00ff9904";
+    ctx.lineWidth = 1;
+    const r = 10;
+    ctx.beginPath();
+    ctx.moveTo(x1 + r, y1);
+    ctx.lineTo(x2 - r, y1);
+    ctx.arcTo(x2, y1, x2, y1 + r, r);
+    ctx.lineTo(x2, y2 - r);
+    ctx.arcTo(x2, y2, x2 - r, y2, r);
+    ctx.lineTo(x1 + r, y2);
+    ctx.arcTo(x1, y2, x1, y2 - r, r);
+    ctx.lineTo(x1, y1 + r);
+    ctx.arcTo(x1, y1, x1 + r, y1, r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+    ctx.font = "9px monospace";
+    ctx.fillStyle = "#00ff9940";
+    ctx.fillText(snet.network || "", x1 + 6, y1 + 13);
+    ctx.restore();
+  });
+}
+
+function _renderTopology(topology) {
+  const devices = topology.devices || [];
+  const topoEdges = topology.edges || [];
+  const intermediates = new Set(topology.intermediates || []);
+  const gatewayIp = topology.gateway || null;
+  const subnet = topology.subnet || null;
+  const subnets = topology.subnets || [];
+
+  subnetsForDraw = subnets;
+
+  const deviceMap = {};
+  devices.forEach(function(d) { deviceMap[d.ip] = d; });
+
+  const levelMap = {};
+  levelMap["internet"] = 0;
+  if (gatewayIp) levelMap[gatewayIp] = 1;
+  intermediates.forEach(function(ip) { levelMap[ip] = 2; });
+  devices.forEach(function(d) {
+    if (!(d.ip in levelMap)) levelMap[d.ip] = 3;
+  });
+
   const nodes = new vis.DataSet();
-  const edges = new vis.DataSet();
-
-  let gatewayId = null;
-
-  const internetTooltip = document.createElement("div");
-  internetTooltip.innerHTML = `<div style="color:#555;font-weight:bold">INTERNET</div><div style="color:#333;font-size:10px;margin-top:4px">External network</div>`;
+  const edgesDS = new vis.DataSet();
 
   nodes.add({
     id: "internet",
     label: "INTERNET",
+    level: 0,
     shape: "dot",
     size: 18,
-    color: { background: "#0d0d0d", border: "#222222", highlight: { background: "#111", border: "#333" } },
-    font: { color: "#333333", size: 10 },
-    title: internetTooltip,
+    color: {
+      background: "#0d0d0d",
+      border: "#222222",
+      highlight: { background: "#111111", border: "#333333" },
+      hover: { background: "#111111", border: "#333333" },
+    },
+    font: { color: "#333333", size: 10, face: "monospace" },
+    title: makeInternetTooltip(),
   });
 
-  devices.forEach((device, index) => {
+  devices.forEach(function(device) {
     const role = getRole(device);
     const style = getRoleStyle(role);
     const hostname = (device.hostname && device.hostname !== device.ip) ? device.hostname : "";
-
-    if (role === "gateway") gatewayId = index;
+    const level = (levelMap[device.ip] !== undefined) ? levelMap[device.ip] : 3;
+    const isHighLevel = level <= 2;
 
     nodes.add({
-      id: index,
+      id: device.ip,
       label: device.ip + (hostname ? "\n" + hostname : ""),
       title: makeTooltip(role, device, style),
+      level: level,
       color: {
         background: style.bg,
         border: style.border,
         highlight: { background: style.bg, border: "#00ff99" },
-        hover: { background: style.bg, border: style.border }
+        hover: { background: style.bg, border: style.border },
       },
       size: style.size,
       font: {
-        color: role === "gateway" ? "#00ff99" : "#cccccc",
+        color: role === "gateway" ? "#00ff99" : (isHighLevel ? "#aaaaaa" : "#666666"),
         size: 10,
-        bold: role === "gateway"
-      }
+        bold: role === "gateway",
+        face: "monospace",
+      },
+      shadow: {
+        enabled: true,
+        color: style.border + "44",
+        size: role === "gateway" ? 14 : (isHighLevel ? 10 : 6),
+        x: 0,
+        y: 0,
+      },
     });
   });
 
-  if (gatewayId !== null) {
-    edges.add({
-      from: gatewayId,
-      to: "internet",
-      dashes: [4, 4],
-      color: { color: "#222222", highlight: "#444444" },
-      arrows: { to: { enabled: true, scaleFactor: 0.4 } },
-      width: 1,
+  if (topoEdges.length === 0 && devices.length > 0) {
+    const fallbackGw = gatewayIp || devices[0].ip;
+    edgesDS.add({ id: "gw-internet", from: fallbackGw, to: "internet", ...getEdgeStyle("uplink") });
+    devices.forEach(function(d, i) {
+      if (d.ip === fallbackGw) return;
+      edgesDS.add({ id: "fb-" + i, from: d.ip, to: fallbackGw, ...getEdgeStyle("client") });
     });
-
-    devices.forEach((_, index) => {
-      if (index !== gatewayId) {
-        edges.add({
-          from: index,
-          to: gatewayId,
-          arrows: { to: { enabled: true, scaleFactor: 0.4 } },
-          color: { color: "#1a1a1a", highlight: "#00ff9944" },
-          width: 1,
-        });
-      }
+  } else {
+    topoEdges.forEach(function(edge, i) {
+      const srcOk = edge.src === "internet" || !!deviceMap[edge.src];
+      const dstOk = edge.dst === "internet" || !!deviceMap[edge.dst];
+      if (!srcOk || !dstOk) return;
+      edgesDS.add({ id: "e-" + i, from: edge.src, to: edge.dst, ...getEdgeStyle(edge.type || "client") });
     });
   }
 
-  document.getElementById("counter").textContent = `// ${devices.length} device${devices.length !== 1 ? "s" : ""}`;
+  document.getElementById("counter").textContent =
+    "// " + devices.length + " device" + (devices.length !== 1 ? "s" : "");
+  updateTopoPanel(subnet, gatewayIp, devices.length, intermediates.size);
 
   const container = document.getElementById("graph");
   if (network) network.destroy();
-  network = new vis.Network(container, { nodes, edges }, options);
 
-    network.on("doubleClick", function(params) {
-      if (params.nodes.length === 0) return;
-      const nodeId = params.nodes[0];
-      const node = nodes.get(nodeId);
-      if (!node || nodeId === "internet") return;
+  network = new vis.Network(container, { nodes: nodes, edges: edgesDS }, buildOptions());
 
-      const current = node.label ? node.label.split("\n")[0] : "";
-      const name = prompt(`Custom name for ${current}:`, node._customName || "");
-      if (name === null) return; 
+  network.on("afterDrawing", function(ctx) { _drawSubnetBoxes(ctx); });
 
-      node._customName = name;
-      const ipLine = node.label ? node.label.split("\n")[0] : "";
-      nodes.update({
-        id: nodeId,
-        label: name ? `${ipLine}\n ${name}` : ipLine,
-      });
+  network.on("doubleClick", function(params) {
+    if (params.nodes.length === 0) return;
+    const nodeId = params.nodes[0];
+    if (nodeId === "internet") return;
+    const node = nodes.get(nodeId);
+    if (!node) return;
+    const ipLine = node.label ? node.label.split("\n")[0] : "";
+    const name = prompt("Custom name for " + ipLine + ":", node._customName || "");
+    if (name === null) return;
+    node._customName = name;
+    nodes.update({ id: nodeId, label: name ? (ipLine + "\n " + name) : ipLine });
   });
 
+  network.once("stabilizationIterationsDone", function() {
+    network.fit({ animation: { duration: 600, easingFunction: "easeInOutQuad" } });
+    network.redraw();
+  });
+}
+
+function updateGraph(topologyJson) {
+  let topology;
+  try {
+    topology = JSON.parse(topologyJson);
+  } catch(e) {
+    return;
+  }
+
+  if (Array.isArray(topology)) {
+    topology = {
+      devices: topology,
+      gateway: null,
+      subnet: null,
+      subnets: [],
+      edges: [],
+      intermediates: [],
+    };
+  }
+
+  currentTopology = topology;
+  _renderTopology(topology);
 }
 </script>
 </body>

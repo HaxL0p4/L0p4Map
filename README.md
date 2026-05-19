@@ -58,7 +58,8 @@ No bloat. No BS. Just raw network intelligence.
 ![Port Scan](img/lopamap2.png)
 
 ### Network Topology — Interactive network topology graph
-![Network Topology Graph](img/retepng.png)
+![Network Topology Graph | Hierarchical](img/retepng1.png)
+![Network Topology Graph | Force Atlas](img/retepng2.png)
 
 ### Attack surface - Exposed services, open ports and vulnerability overview *(in development)*
 ![Network Topology Graph](img/ats.png)

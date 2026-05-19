@@ -27,25 +27,25 @@ No bloat. No BS. Just raw network intelligence.
 ## Features
 
 - **ARP Network Scan** — fast host discovery with local IEEE OUI database lookup
-- **Hostname Resolution** — multi-method detection via reverse DNS, NetBIOS (Windows devices) and mDNS/Avahi (Linux, Mac, IoT)
+- **Hostname Resolution** — multi-method detection via reverse DNS, NetBIOS (Windows) and mDNS/Avahi (Linux, Mac, IoT)
+- **Device Fingerprinting** — TTL-based OS hint (Linux/macOS, Windows, network device), TCP port probing on topology-relevant ports, raw SNMP `sysDescr` query (no external libs)
+- **Role Detection** — automatic classification of each host: gateway, router, access point, switch, PC, Apple, mobile, Raspberry Pi, virtual machine, unknown — combining vendor, hostname, TTL, open ports and SNMP response
+- **Real Network Topology Graph** — hierarchical vis.js graph that reflects the actual network structure: gateway at the top, intermediate devices (routers/APs/switches) on a second tier, clients grouped below their parent. Toggleable between Hierarchical and Force Atlas layouts
+- **Subnet Bounding Boxes** — each detected subnet is drawn as a dashed overlay directly on the graph canvas, labeled with its CIDR
+- **Typed Edges** — three visually distinct link types: uplink (gateway → internet), backbone (intermediate → gateway), client link (device → parent)
+- **Topology Panel** — live overlay showing subnet, gateway IP, total devices and intermediate count
 - **Full nmap Integration** — SYN scan, UDP, OS detection, service version, NSE scripts
 - **Banner Grabbing** — HTTP, SMB, FTP, SSH, SSL enumeration
-- **Vulnerability Detection** — CVE lookup via vulners, vuln scripts, malware detection
+- **Vulnerability Detection** — CVE lookup via vulners, vuln and malware scripts
+- **Attack Surface** — exposed services, open ports and CVE overview per host with CVSS scoring and direct NVD link; results exportable as CSV
+- **Traffic Analyzer** — real-time packet capture with per-device stats, protocol coloring, filter bar, double-click to port scan; exportable as CSV
 - **Traceroute** — ICMP-based with real-time output
-- **Dark Professional UI** — built with PyQt6, designed for researchers
-- **Network Graph** — interactive topology visualization via vis.js
 - **Interface Selection** — choose which network interface to scan on
-- **Scan Export** — save full nmap output to `.txt` via native file manager dialog
-- **Graph Export** — export the network topology as CSV or PNG
 - **Live Monitoring** — auto-refresh the network graph at configurable intervals (30s / 60s / 120s)
-- **Attack Surface section** — visualize exposed services, open ports, and potential vulnerabilities on hosts, helping identify security risks at a glance. (*in development*)
-- **Traffic Analyzer page** — real-time network traffic inspection and analysis (*In Development*)
-- **Custom Node Labels** — assign custom names to devices directly from the graph
-- **Attack surface Result Download** — save full output to `.csv` via native file manager dialog *(`.pdf` soon!)*
-
-## 🚧 Upcoming Features
-
-- **Graph Persistence** — save and reload network topologies
+- **Scan Export** — save full nmap output to `.txt`
+- **Graph Export** — export the network topology as CSV or PNG
+- **Custom Node Labels** — assign custom names to any device directly on the graph (double-click)
+- **Dark Professional UI** — built with PyQt6
 
 ---
 
@@ -57,15 +57,17 @@ No bloat. No BS. Just raw network intelligence.
 ### Port Scan — Full nmap Integration
 ![Port Scan](img/lopamap2.png)
 
-### Network Topology — Interactive network topology graph
+### Network Topology — Hierarchical topology graph
 ![Network Topology Graph | Hierarchical](img/retepng1.png)
+
+### Network Topology — Force Atlas layout
 ![Network Topology Graph | Force Atlas](img/retepng2.png)
 
-### Attack surface - Exposed services, open ports and vulnerability overview *(in development)*
-![Network Topology Graph](img/Ats.png)
+### Attack Surface — Exposed services, open ports and vulnerability overview
+![Attack surface section](img/Ats.png)
 
 ### Traffic Analyzer — Real-time network traffic analysis
-![Network Topology Graph](img/traffic2.png)
+![Traffic Analyzer](img/traffic2.png)
 
 ---
 
@@ -74,11 +76,12 @@ No bloat. No BS. Just raw network intelligence.
 - Linux (Debian or Arch)
 - Python 3.11+
 - nmap installed (`sudo pacman -S nmap` or `sudo apt install nmap`)
-- Root privileges (required for ARP scanning)
+- Root privileges (required for ARP scanning and packet capture)
 
 ---
 
 ## Installation
+
 ```bash
 git clone https://github.com/HaxL0p4/L0p4Map.git
 cd L0p4Map
@@ -93,17 +96,19 @@ sudo chmod +x L0p4Map.sh
 ## Usage
 
 Launch the tool with root privileges:
+
 ```bash
 sudo ./L0p4Map.sh
 ```
 
 1. Select the network interface from the toolbar dropdown
-2. Press **[ SCAN ]** to discover all devices on your network
-3. Click a device to see details and run quick actions (ping, traceroute)
-4. Press **[ PORT SCAN ]** to open the full nmap scan interface
-5. Select scan options and press **[ RUN SCAN ]** — export results with **[ EXPORT SCAN ]**
-6. Switch to the graph view to explore the network topology — export as CSV or PNG
-7. Enable **[ LIVE ]** to keep the graph updated automatically
+2. Press **[ SCAN ]** to discover all devices — each host is fingerprinted via TTL, port probing and SNMP
+3. Click a device to see details and run quick actions (ping, traceroute, port scan)
+4. Switch to **Graph** to explore the real network topology — hover nodes for full device info, double-click to assign a custom label
+5. Toggle between **[ HIERARCHICAL ]** and **[ FORCE ATLAS ]** layout from the graph view
+6. Use **Attack Surface** to run a deep nmap + vulners scan on any host and review CVEs
+7. Use **Traffic Analyzer** to capture live packets, filter by device or protocol, and export to CSV
+8. Enable **[ LIVE ]** in the graph view to keep the topology updated automatically
 
 ---
 

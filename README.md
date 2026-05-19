@@ -62,7 +62,7 @@ No bloat. No BS. Just raw network intelligence.
 ![Network Topology Graph | Force Atlas](img/retepng2.png)
 
 ### Attack surface - Exposed services, open ports and vulnerability overview *(in development)*
-![Network Topology Graph](img/ats.png)
+![Network Topology Graph](img/Ats.png)
 
 ### Traffic Analyzer — Real-time network traffic analysis
 ![Network Topology Graph](img/traffic2.png)

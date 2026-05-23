@@ -1,0 +1,9 @@
+l0p4map (0.2.0-0kali1) kali-dev; urgency=medium
+
+  * Initial Kali Linux packaging
+  * Add CLI wrapper (__main__.py) with scan, json, csv, table output
+  * Add pyproject.toml and debian/ packaging files
+  * Add man page l0p4map(1)
+  * Centralise version string in __main__.py
+
+ -- HaxL0p4 <haxl0p4@proton.me>  Sat, 23 May 2026 12:00:00 +0200

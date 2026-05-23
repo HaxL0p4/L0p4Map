@@ -22,6 +22,8 @@ from scapy.all import ARP, Ether, srp, sniff, IP as ScapyIP, TCP,UDP, ICMP
 from collections import defaultdict
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from core.scanner import scan_network, get_local_subnet, check_root, get_network_interfaces, capture_traffic
+from __main__ import __version__
+
 
 def load_colored_svg(path, color, size=24):
     renderer = QSvgRenderer(path)
@@ -42,7 +44,7 @@ class LogoIniziale(QSplashScreen):
         pixmap.fill(QColor("#0d0d0d"))
 
         painter = QPainter(pixmap)
-        
+
         logo_path = os.path.join(os.path.dirname(__file__), "assets", "screenLogo.png")
         if os.path.exists(logo_path):
             maxL = 540
@@ -77,7 +79,7 @@ class LogoIniziale(QSplashScreen):
         painter.drawText(
             pixmap.rect().adjusted(0,300,0,0),
             Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
-            "v0.1.0-beta - loading..."
+            f"v{__version__} - loading..."
         )
 
         painter.setPen(QColor("#00ff22"))
@@ -207,7 +209,7 @@ def cvss_to_severity(cvss: float) -> str:
     if cvss >= 9.0: return "CRITICAL"
     if cvss >= 7.0: return "HIGH"
     if cvss >= 4.0: return "MEDIUM"
-    return "LOW"   
+    return "LOW"
 
 
 class AttackSurfaceWorker(QThread):
@@ -296,7 +298,7 @@ class AttackSurfaceWorker(QThread):
         }
 
         try:
-            tree = ET.parse(xml_path)  
+            tree = ET.parse(xml_path)
             root = tree.getroot()
         except (ET.ParseError, FileNotFoundError):
             return result
@@ -506,8 +508,8 @@ class MainWindow(QMainWindow):
         body_layout.addWidget(self._build_sidebar())
 
         self.stack = QStackedWidget()
-        self.stack.addWidget(self._build_home_page())   
-        self.stack.addWidget(self._build_scan_page())   
+        self.stack.addWidget(self._build_home_page())
+        self.stack.addWidget(self._build_scan_page())
         self.stack.addWidget(self._build_graph_page())
         self.stack.addWidget(self._build_attackSurface_page())
         self.stack.addWidget(self._build_trafficAnalyzer_page())
@@ -610,21 +612,21 @@ class MainWindow(QMainWindow):
                     color: #aaaaaa;
                     border: 1px solid #222222;
                     padding: 4px 10px;
-                    font-size: 11px;                          
+                    font-size: 11px;
                 }
                 QComboBox:hover {
                     border-color: #00f999;
-                    color: #00ff99;                          
+                    color: #00ff99;
                 }
                 QComboBox QAbstractItemView {
                     background-color: #111111;
                     color: #aaaaaa;
                     selection-background-color: #00ff99;
                     selection-color: #00ff99;
-                    border: 1px solid #1a1a1a;                         
+                    border: 1px solid #1a1a1a;
                 }
         """)
-        
+
         self._load_interfaces()
         self.iface_selector.currentIndexChanged.connect(self._on_iface_changed)
 
@@ -641,7 +643,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.scan_button)
 
         return toolbar
-    
+
     def _load_interfaces(self):
         interfaces = get_network_interfaces()
         self.interfaces = interfaces
@@ -660,7 +662,7 @@ class MainWindow(QMainWindow):
             self.subnet_label.setText(f"subnet: {iface['ip']}")
 
     def _build_home_page(self):
-        
+
         home = QWidget()
         layout = QVBoxLayout(home)
         layout.setSpacing(0)
@@ -685,11 +687,11 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._build_scan_output(), stretch=1)
 
         self.scan_button.clicked.connect(
-            lambda: (self.stack.setCurrentIndex(0), self._set_active_nav(0)) 
+            lambda: (self.stack.setCurrentIndex(0), self._set_active_nav(0))
         )
 
         return page
-    
+
     def _build_scan_options(self):
         scroll = QScrollArea()
         scroll.setFixedWidth(260)
@@ -717,10 +719,10 @@ class MainWindow(QMainWindow):
                 color: #e0e0e0;
                 border: 1px solid #1a1a1a;
                 padding: 6px;
-                font-family: 'JetBrains Mono', monospace;                          
+                font-family: 'JetBrains Mono', monospace;
             }
             QLineEdit:focus {
-                border: 1px solid #00ff99;                           
+                border: 1px solid #00ff99;
             }
         """)
         layout.addWidget(self.scan_target)
@@ -840,10 +842,10 @@ class MainWindow(QMainWindow):
                     border: 1px solid #1a1a1a;
                     padding: 6px;
                     font-family: 'JetBrains Mono', monospace;
-                    font-size: 11px;                        
+                    font-size: 11px;
                 }
                 QLineEdit:focus {
-                    border: 1px solid #00ff99;                        
+                    border: 1px solid #00ff99;
                 }
         """)
         layout.addWidget(self.custom_flags)
@@ -866,7 +868,7 @@ class MainWindow(QMainWindow):
         layout.addStretch()
         scroll.setWidget(container)
         return scroll
-    
+
     def _export_scan(self):
         path, _ = QFileDialog.getSaveFileName(
             self,
@@ -905,7 +907,7 @@ class MainWindow(QMainWindow):
                     border: none;
                     font-family: 'JetBrains Mono', monospace;
                     font-size: 12px;
-                    padding: 12px;                       
+                    padding: 12px;
                 }
         """)
         self.scan_output.setPlaceholderText("// select options and run scan...")
@@ -995,18 +997,18 @@ class MainWindow(QMainWindow):
                     color: #aaaaaa;
                     border: 1px solid #222222;
                     padding: 2px 8px;
-                    font-size: 11px;                            
+                    font-size: 11px;
                 }
                 QComboBox:hover {
                     border-color: #00ff99;
-                    color: #00ff99;                            
+                    color: #00ff99;
                 }
                 QComboBox QAbstractItemView {
                     background-color: #111111;
                     color: #aaaaaa;
                     selection-background-color: #00ff22;
                     selection-color: #00ff99;
-                    border: 1px solid #1a1a1a;                            
+                    border: 1px solid #1a1a1a;
                 }
         """)
         self.btn_export_graph.currentIndexChanged.connect(self._export_graph)
@@ -1080,7 +1082,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.graph_view, stretch=1)
 
         return page
-    
+
 
     def _toggle_live(self):
         if self.btn_live.isChecked():
@@ -1093,11 +1095,11 @@ class MainWindow(QMainWindow):
             self.live_interval.setDisabled(True)
             self.statusBar().showMessage("Live Monitoring Stopped.")
 
-        
+
     def _live_scan(self):
         if hasattr(self, 'live_worker') and self.live_worker.isRunning():
             return
-        
+
         iface = self.iface_selector.currentData()
         subnet = get_local_subnet(iface["name"])
 
@@ -1107,15 +1109,15 @@ class MainWindow(QMainWindow):
 
     def _on_live_scan_finished(self, hosts):
         self._update_graph(hosts)
-        self.last_hosts = hosts 
+        self.last_hosts = hosts
         self.statusBar().showMessage(
         f"Live update — {len(hosts)} devices — {self.live_interval.currentText()} refresh")
 
-    
+
     def _export_graph(self, index):
         if index == 0:
             return
-    
+
         fmt = self.btn_export_graph.itemData(index)
         if not hasattr(self, 'last_hosts') or not self.last_hosts:
             self.statusBar().showMessage("No scan data to export.")
@@ -1145,7 +1147,7 @@ class MainWindow(QMainWindow):
             writer = csv.DictWriter(f, fieldnames=["ip","mac","vendor","hostname"])
             writer.writeheader()
             writer.writerows(self.last_hosts)
-            
+
         self.statusBar().showMessage(f"Graph (csv) exported in {path}")
 
     def _export_graph_png(self):
@@ -1157,7 +1159,7 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
-        
+
         pixmap = self.graph_view.grab()
         pixmap.save(path, "PNG")
         self.statusBar().showMessage(f"Graph (png) exported to {path}")
@@ -1397,7 +1399,7 @@ class MainWindow(QMainWindow):
         self._ta_device_stats = {}
 
         return page
-    
+
 
     def _ta_start(self):
         iface = self.iface_selector.currentData()
@@ -1459,16 +1461,16 @@ class MainWindow(QMainWindow):
     def _ta_on_packet(self, pkt: dict):
         if not hasattr(self, '_ta_packets'):
             return
-    
+
         if self._ta_start_time is None:
             self._ta_start_time = time.time()
-    
+
         elapsed = time.time() - self._ta_start_time
         self._ta_packet_count += 1
-    
+
         src_label = self._resolve_ip_label(pkt["src"])
         dst_label = self._resolve_ip_label(pkt["dst"])
-    
+
         packet_data = {
             "n": self._ta_packet_count,
             "time": f"{elapsed:.3f}s",
@@ -1480,16 +1482,16 @@ class MainWindow(QMainWindow):
             "port": pkt["port"],
             "size": pkt["size"],
         }
-    
+
         self._ta_packets.append(packet_data)
-    
+
         for ip in [pkt["src"], pkt["dst"]]:
             if ip not in self._ta_device_stats:
                 self._ta_device_stats[ip] = 0
             self._ta_device_stats[ip] += 1
 
         self._ta_add_row(packet_data)
-    
+
         if self._ta_packet_count % 20 == 0 or self._ta_packet_count <= 5:
             self._ta_update_device_list()
             self.ta_status.setText(
@@ -1498,7 +1500,7 @@ class MainWindow(QMainWindow):
             if self._ta_packet_count > 0:
                 self.btn_ta_export.setEnabled(True)
 
-    
+
     def _resolve_ip_label(self, ip: str) -> str:
         if hasattr(self, 'last_hosts'):
             for h in self.last_hosts:
@@ -1507,7 +1509,7 @@ class MainWindow(QMainWindow):
                     if hostname != ip:
                         return f"{ip} ({hostname.split('.')[0]})"
         return ip
-    
+
 
     def _ta_add_row(self, pkt: dict):
         proto_colors = {
@@ -1534,7 +1536,7 @@ class MainWindow(QMainWindow):
         for col, text in enumerate(items):
             item = QTableWidgetItem(text)
             item.setBackground(bg)
-            if col == 4: 
+            if col == 4:
                 colors = {"TCP": "#4488ff", "UDP": "#44cc88", "ICMP": "#ff8844", "OTHER": "#888888"}
                 item.setForeground(QColor(colors.get(pkt["proto"], "#888888")))
             self.ta_table.setItem(row, col, item)
@@ -1599,13 +1601,13 @@ class MainWindow(QMainWindow):
         self.table.itemSelectionChanged.connect(self._on_device_selected)
         self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         return self.table
-    
+
     def _show_menu(self, pos):
         item = self.table.itemAt(pos)
 
         if item is None:
             return
-        
+
         row = item.row()
         ip = self.table.item(row,0).text()
 
@@ -1622,7 +1624,7 @@ class MainWindow(QMainWindow):
         menu.addAction(portScan_action)
         menu.addAction(as_action)
         menu.addAction(ta_action)
-        
+
         menu.exec(self.table.viewport().mapToGlobal(pos))
 
 
@@ -1717,7 +1719,7 @@ class MainWindow(QMainWindow):
         for btn in [self.btn_ping, self.btn_portscan, self.btn_traceroute]:
             btn.setStyleSheet("""
                 QPushButton {
-                    
+
                     color: #00ff99;
                     border: 1px solid #00ff99;
                     padding: 6px 18px;
@@ -2202,7 +2204,7 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self.as_status)
         layout.addWidget(right, stretch=1)
         return page
-    
+
     def _as_export_csv(self):
         target = self.as_target.text().strip()
         if not target or target not in self._as_results:
@@ -2243,7 +2245,7 @@ class MainWindow(QMainWindow):
                 writer.writerow([c["id"], c["cvss"], c["port"], c["service"], c["detail"]])
 
         self.statusBar().showMessage(f"Attack surface exported to {path}")
-    
+
     def _as_start_scan(self):
         target = self.as_target.text().strip()
         if not target or not is_valid_target(target):
@@ -2409,7 +2411,7 @@ class MainWindow(QMainWindow):
         url = item.data(Qt.ItemDataRole.UserRole)
         if not url:
             return
-        
+
         original_user = os.environ.get('SUDO_USER')
         if original_user:
             subprocess.Popen(

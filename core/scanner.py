@@ -1,13 +1,15 @@
+import csv as _csv
 import ipaddress
+import os
 import socket
 import struct
-import psutil
-import csv as _csv
-from scapy.all import ARP, Ether, srp, sniff, IP as ScapyIP, TCP, UDP, ICMP, sr1, conf
-import os
 import subprocess
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+import psutil
+from scapy.all import ARP, ICMP, TCP, UDP, Ether, conf, sniff, sr1, srp
+from scapy.all import IP as ScapyIP
 
 _vendor_cache: dict[str, str] = {}
 _oui_db: dict[str, str] = {}
@@ -15,25 +17,64 @@ _oui_db: dict[str, str] = {}
 TOPOLOGY_PROBE_PORTS = [80, 443, 22, 23, 53, 8080, 8443, 179, 161, 8291, 2601, 4786]
 
 NETWORK_DEVICE_VENDORS = [
-    "cisco", "mikrotik", "ubiquiti", "juniper", "fortinet", "palo alto",
-    "aruba", "ruckus", "meraki", "extreme", "brocade", "h3c", "huawei",
-    "zyxel", "dlink", "tp-link", "netgear", "linksys", "tenda",
-    "openwrt", "dd-wrt", "edgecore", "cambium", "aerohive",
+    "cisco",
+    "mikrotik",
+    "ubiquiti",
+    "juniper",
+    "fortinet",
+    "palo alto",
+    "aruba",
+    "ruckus",
+    "meraki",
+    "extreme",
+    "brocade",
+    "h3c",
+    "huawei",
+    "zyxel",
+    "dlink",
+    "tp-link",
+    "netgear",
+    "linksys",
+    "tenda",
+    "openwrt",
+    "dd-wrt",
+    "edgecore",
+    "cambium",
+    "aerohive",
 ]
 
 PC_VENDORS = [
-    "intel", "dell", "lenovo", "hp", "hewlett", "acer", "gigabyte",
-    "msi", "asrock", "asus", "supermicro", "fujitsu",
+    "intel",
+    "dell",
+    "lenovo",
+    "hp",
+    "hewlett",
+    "acer",
+    "gigabyte",
+    "msi",
+    "asrock",
+    "asus",
+    "supermicro",
+    "fujitsu",
 ]
 
 MOBILE_VENDORS = [
-    "samsung", "xiaomi", "oneplus", "oppo", "realme", "motorola",
-    "lg electronics", "sony mobile", "zte",
+    "samsung",
+    "xiaomi",
+    "oneplus",
+    "oppo",
+    "realme",
+    "motorola",
+    "lg electronics",
+    "sony mobile",
+    "zte",
 ]
 
 
 def capture_traffic(iface: str, duration: int = 15) -> list[dict]:
-    connections = defaultdict(lambda: {"packets": 0, "bytes": 0, "proto": "OTHER", "port": "-"})
+    connections = defaultdict(
+        lambda: {"packets": 0, "bytes": 0, "proto": "OTHER", "port": "-"}
+    )
 
     def process(pkt):
         if ScapyIP not in pkt:
@@ -61,15 +102,17 @@ def capture_traffic(iface: str, duration: int = 15) -> list[dict]:
 
     edges = []
     for (src, dst), data in connections.items():
-        edges.append({
-            "src": src,
-            "dst": dst,
-            "packets": data["packets"],
-            "bytes": data["bytes"],
-            "proto": data["proto"],
-            "port": data["port"],
-            "weight": min(data["packets"] / 10, 10),
-        })
+        edges.append(
+            {
+                "src": src,
+                "dst": dst,
+                "packets": data["packets"],
+                "bytes": data["bytes"],
+                "proto": data["proto"],
+                "port": data["port"],
+                "weight": min(data["packets"] / 10, 10),
+            }
+        )
 
     return sorted(edges, key=lambda e: e["packets"], reverse=True)
 
@@ -122,8 +165,11 @@ def get_local_subnet(iface_name=None) -> str:
             raise RuntimeError(f"Interface '{iface_name}' not active.")
         for addr in interfaces[iface_name]:
             if addr.family == socket.AF_INET:
-                return str(ipaddress.IPv4Network(
-                    f"{addr.address}/{addr.netmask}", strict=False))
+                return str(
+                    ipaddress.IPv4Network(
+                        f"{addr.address}/{addr.netmask}", strict=False
+                    )
+                )
         raise RuntimeError(f"No IPv4 address on '{iface_name}'.")
     for nome, indirizzi in interfaces.items():
         if not stats[nome].isup:
@@ -133,8 +179,7 @@ def get_local_subnet(iface_name=None) -> str:
                 ip = addr.address
                 if ip.startswith("127."):
                     continue
-                return str(ipaddress.IPv4Network(
-                    f"{ip}/{addr.netmask}", strict=False))
+                return str(ipaddress.IPv4Network(f"{ip}/{addr.netmask}", strict=False))
     raise RuntimeError("No active interface found.")
 
 
@@ -200,9 +245,9 @@ def _netbios_hostname(ip: str) -> str | None:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.settimeout(1)
         query = (
-            b'\x82\x28\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00'
-            b'\x20CKAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
-            b'\x00\x00!\x00\x01'
+            b"\x82\x28\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00"
+            b"\x20CKAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            b"\x00\x00!\x00\x01"
         )
         sock.sendto(query, (ip, 137))
         data, _ = sock.recvfrom(1024)
@@ -297,25 +342,72 @@ def _infer_role(
     if h in ("router", "gateway", "_gateway", "default-gateway"):
         return "gateway"
 
-    if any(k in v for k in ["cisco", "mikrotik", "ubiquiti", "juniper",
-                              "fortinet", "edgecore", "brocade", "h3c"]):
+    if any(
+        k in v
+        for k in [
+            "cisco",
+            "mikrotik",
+            "ubiquiti",
+            "juniper",
+            "fortinet",
+            "edgecore",
+            "brocade",
+            "h3c",
+        ]
+    ):
         if any(p in open_ports for p in [22, 23, 179, 8291, 2601, 4786]):
             return "router"
         return "router"
 
-    if any(k in v for k in ["tp-link", "netgear", "dlink", "linksys", "tenda",
-                              "zyxel", "aruba", "ruckus", "meraki", "cambium",
-                              "aerohive", "ubiquiti"]):
+    if any(
+        k in v
+        for k in [
+            "tp-link",
+            "netgear",
+            "dlink",
+            "linksys",
+            "tenda",
+            "zyxel",
+            "aruba",
+            "ruckus",
+            "meraki",
+            "cambium",
+            "aerohive",
+            "ubiquiti",
+        ]
+    ):
         if any(p in open_ports for p in [80, 443, 8080, 8443]):
             return "ap"
         return "ap"
 
-    if any(k in h for k in ["router", "gw", "gateway", "firewall", "pfsense",
-                              "opnsense", "vyos", "mikrotik"]):
+    if any(
+        k in h
+        for k in [
+            "router",
+            "gw",
+            "gateway",
+            "firewall",
+            "pfsense",
+            "opnsense",
+            "vyos",
+            "mikrotik",
+        ]
+    ):
         return "router"
 
-    if any(k in h for k in ["ap", "wifi", "wlan", "wireless", "access-point",
-                              "access_point", "hotspot", "ssid"]):
+    if any(
+        k in h
+        for k in [
+            "ap",
+            "wifi",
+            "wlan",
+            "wireless",
+            "access-point",
+            "access_point",
+            "hotspot",
+            "ssid",
+        ]
+    ):
         return "ap"
 
     if any(k in h for k in ["switch", "sw-", "sw_", "core-sw", "dist-sw"]):
@@ -327,11 +419,25 @@ def _infer_role(
     if any(k in v for k in ["vmware", "virtualbox", "proxmox", "parallels"]):
         return "vm"
 
-    if any(k in v for k in ["apple"]) or any(k in h for k in ["iphone", "ipad", "macbook", "imac", "apple"]):
+    if any(k in v for k in ["apple"]) or any(
+        k in h for k in ["iphone", "ipad", "macbook", "imac", "apple"]
+    ):
         return "apple"
 
-    if any(k in v for k in ["samsung", "xiaomi", "oneplus", "oppo", "realme",
-                              "motorola", "lg electronics", "sony mobile", "zte"]):
+    if any(
+        k in v
+        for k in [
+            "samsung",
+            "xiaomi",
+            "oneplus",
+            "oppo",
+            "realme",
+            "motorola",
+            "lg electronics",
+            "sony mobile",
+            "zte",
+        ]
+    ):
         return "mobile"
     if any(k in h for k in ["android", "iphone", "phone", "mobile"]):
         return "mobile"
@@ -343,8 +449,21 @@ def _infer_role(
 
     if any(k in v for k in PC_VENDORS):
         return "pc"
-    if any(k in h for k in ["desktop", "pc-", "-pc", "workstation", "laptop",
-                              "linux", "windows", "ubuntu", "debian", "fedora"]):
+    if any(
+        k in h
+        for k in [
+            "desktop",
+            "pc-",
+            "-pc",
+            "workstation",
+            "laptop",
+            "linux",
+            "windows",
+            "ubuntu",
+            "debian",
+            "fedora",
+        ]
+    ):
         return "pc"
 
     if os_hint == "linux/macos" and 22 in open_ports:
@@ -363,15 +482,13 @@ def _probe_snmp_sysdescr(ip: str) -> str | None:
         request = (
             b"\x30\x29"
             b"\x02\x01\x00"
-            b"\x04" + bytes([len(community)]) + community +
-            b"\xa0\x1c"
+            b"\x04" + bytes([len(community)]) + community + b"\xa0\x1c"
             b"\x02\x04\x00\x00\x00\x01"
             b"\x02\x01\x00"
             b"\x02\x01\x00"
             b"\x30\x0e"
             b"\x30\x0c"
-            b"\x06\x08" + oid +
-            b"\x05\x00"
+            b"\x06\x08" + oid + b"\x05\x00"
         )
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.settimeout(1.0)
@@ -410,7 +527,7 @@ def _enrich_host(host: dict, known_gateway_ip: str | None) -> dict:
     if snmp_desc:
         vendor_for_role = snmp_desc + " " + vendor_for_role
 
-    is_gw = (ip == known_gateway_ip)
+    is_gw = ip == known_gateway_ip
     host["role"] = _infer_role(
         ip,
         vendor_for_role,
@@ -445,22 +562,23 @@ def scan_network(subnet: str) -> list[dict]:
 
     hosts = []
     for mac, ip in seen_macs.items():
-        hosts.append({
-            "ip": ip,
-            "mac": mac,
-            "hostname": ip,
-            "vendor": "...",
-            "ttl": None,
-            "os_hint": "unknown",
-            "open_ports": [],
-            "role": "unknown",
-            "snmp_desc": "",
-        })
+        hosts.append(
+            {
+                "ip": ip,
+                "mac": mac,
+                "hostname": ip,
+                "vendor": "...",
+                "ttl": None,
+                "os_hint": "unknown",
+                "open_ports": [],
+                "role": "unknown",
+                "snmp_desc": "",
+            }
+        )
 
     with ThreadPoolExecutor(max_workers=16) as executor:
         futures = {
-            executor.submit(_enrich_host, host, known_gateway): host
-            for host in hosts
+            executor.submit(_enrich_host, host, known_gateway): host for host in hosts
         }
         results = []
         for future in as_completed(futures):
@@ -481,4 +599,3 @@ def _arp_resolve_mac(ip: str, subnet: str) -> str | None:
             return reply[Ether].src
     except Exception:
         pass
-    return None

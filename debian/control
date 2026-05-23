@@ -1,0 +1,49 @@
+Source: l0p4map
+Section: net
+Priority: optional
+Maintainer: HaxL0p4 <haxl0p4@proton.me>
+Build-Depends: debhelper-compat (= 13),
+               dh-python,
+               python3-all
+Standards-Version: 4.6.2
+Homepage: https://github.com/HaxL0p4/L0p4Map
+Vcs-Browser: https://github.com/HaxL0p4/L0p4Map
+Vcs-Git: https://github.com/HaxL0p4/L0p4Map.git
+Rules-Requires-Root: no
+
+Package: l0p4map
+Architecture: all
+Depends: ${python3:Depends},
+         ${misc:Depends},
+         nmap,
+         python3-scapy,
+         python3-psutil,
+         python3-pyqt6,
+         python3-pyqt6.qtwebengine,
+         python3-pyqt6.qtsvg,
+         python3-requests
+Description: professional network monitoring and visualization tool
+ L0p4Map combines ARP host discovery, full nmap integration, and a
+ real-time interactive network topology graph in a dark PyQt6 GUI.
+ Designed for security researchers and network administrators who need
+ fast, detailed visibility into their infrastructure. Also usable
+ headless via CLI for scripting and automation.
+ .
+ Features:
+  - ARP scan with local IEEE OUI database for MAC vendor lookup
+  - Hostname resolution via reverse DNS, NetBIOS and mDNS/Avahi
+  - Device fingerprinting: TTL-based OS hint, TCP port probing, raw
+    SNMP sysDescr query (no external libs required)
+  - Automatic role classification: gateway, router, AP, switch, PC,
+    Apple, mobile, Raspberry Pi, VM, unknown
+  - Hierarchical vis.js topology graph with subnet bounding boxes,
+    typed edges and Force Atlas layout toggle
+  - Live topology panel showing subnet, gateway, device counts
+  - Full nmap integration: SYN, UDP, OS detection, service version,
+    NSE scripts, banner grabbing, CVE lookup via vulners
+  - Attack Surface view: exposed ports, CVSS scoring, NVD links,
+    CSV export
+  - Real-time traffic analyser with per-device stats, protocol
+    coloring, filter bar, double-click to port scan, CSV export
+  - ICMP traceroute with real-time output
+  - Multi-interface support, live auto-refresh, graph PNG/CSV export

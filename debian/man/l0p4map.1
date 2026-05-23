@@ -1,0 +1,123 @@
+.TH L0P4MAP 1 "May 2026" "l0p4map 0.2.0" "Network Security Tools"
+.SH NAME
+l0p4map \- professional network monitoring and visualization tool
+.SH SYNOPSIS
+.B l0p4map
+[\fB\-V\fR]
+.br
+.B l0p4map
+.B scan
+[\fB\-t\fR \fISUBNET\fR]
+[\fB\-o\fR \fIFORMAT\fR]
+[\fB\-f\fR \fIPATH\fR]
+[\fB\-q\fR]
+.br
+.B l0p4map
+.B gui
+.SH DESCRIPTION
+.B l0p4map
+combines ARP host discovery, full nmap integration, and a real-time
+interactive network topology graph in a dark PyQt6 GUI.
+Designed for security researchers and network administrators who need
+fast, detailed visibility into their infrastructure.
+It runs as a GUI by default, and also exposes a CLI for scripting and
+automation.
+.PP
+Root privileges are required for ARP scanning and packet capture.
+.SH FEATURES
+.TP
+.B Scanning
+ARP scan with local IEEE OUI vendor lookup; hostname resolution via
+reverse DNS, NetBIOS and mDNS/Avahi; TTL-based OS fingerprinting; TCP
+port probing; raw SNMP sysDescr query without external libraries.
+.TP
+.B Role detection
+Automatic classification of each host: gateway, router, access point,
+switch, PC, Apple, mobile, Raspberry Pi, virtual machine, or unknown.
+.TP
+.B Topology graph
+Hierarchical vis.js graph with subnet bounding boxes, typed edges, Force
+Atlas layout toggle, live auto-refresh, custom node labels, PNG and CSV
+export.
+.TP
+.B nmap integration
+SYN scan, UDP scan, OS detection, service version enumeration, NSE
+scripts, banner grabbing (HTTP, SMB, FTP, SSH, SSL).
+.TP
+.B Attack Surface
+Deep nmap + vulners scan per host: exposed ports, CVSS scoring, direct
+NVD links, CSV export.
+.TP
+.B Traffic Analyser
+Real-time packet capture with per-device stats, protocol coloring,
+filter bar, double-click to port scan, CSV export.
+.SH COMMANDS
+.TP
+.B scan
+Scan the local subnet (or a specified target) and print discovered hosts.
+.TP
+.B gui
+Launch the graphical interface (default when no command is given).
+.SH OPTIONS
+.TP
+.BR \-t ", " \-\-target " " \fISUBNET\fR
+Target subnet, CIDR range, or IP address.
+Defaults to the auto-detected local subnet.
+.TP
+.BR \-o ", " \-\-output " " \fIFORMAT\fR
+Output format: \fBtable\fR (default), \fBjson\fR, or \fBcsv\fR.
+.TP
+.BR \-f ", " \-\-file " " \fIPATH\fR
+Write output to \fIPATH\fR instead of stdout.
+.TP
+.BR \-q ", " \-\-quiet
+Suppress progress messages on stderr.
+.TP
+.BR \-V ", " \-\-version
+Print version and exit.
+.SH EXAMPLES
+Launch the GUI:
+.PP
+.nf
+    sudo l0p4map
+.fi
+.PP
+Scan the local subnet with table output:
+.PP
+.nf
+    sudo l0p4map scan
+.fi
+.PP
+Scan a specific subnet and output JSON:
+.PP
+.nf
+    sudo l0p4map scan -t 192.168.1.0/24 -o json
+.fi
+.PP
+Save results to a CSV file:
+.PP
+.nf
+    sudo l0p4map scan -o csv -f results.csv
+.fi
+.SH FILES
+.TP
+.I /usr/share/l0p4map/core/oui.csv
+Local IEEE OUI database used for MAC vendor lookup.
+.TP
+.I /usr/share/l0p4map/ui/assets/
+GUI assets including the vis.js topology engine.
+.SH NOTES
+Only use l0p4map on networks you own or have explicit written permission
+to test.
+Unauthorized network scanning may be illegal in your jurisdiction.
+.SH LICENSE
+GNU General Public License v3.0 or later.
+.SH AUTHOR
+HaxL0p4 <haxl0p4@proton.me>
+.br
+.UR https://github.com/HaxL0p4/L0p4Map
+.UE
+.SH SEE ALSO
+.BR nmap (1),
+.BR wireshark (1),
+.BR arp-scan (1)

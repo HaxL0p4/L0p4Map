@@ -19,8 +19,8 @@ Depends: ${python3:Depends},
          python3-scapy,
          python3-psutil,
          python3-pyqt6,
-         python3-pyqt6.qtwebengine,
          python3-pyqt6.qtsvg,
+         python3-pyqt6.qtwebengine,
          python3-requests
 Description: professional network monitoring and visualization tool
  L0p4Map combines ARP host discovery, full nmap integration, and a

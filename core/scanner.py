@@ -1,6 +1,7 @@
 import csv as _csv
 import ipaddress
 import os
+import re
 import socket
 import struct
 import subprocess
@@ -133,10 +134,40 @@ def _load_oui_db():
                 _oui_db[oui] = name
 
 
+def _get_interfaces_from_ip_addr() -> dict[str, str]:
+    result = {}
+    try:
+        out = subprocess.check_output(
+            ["ip", "addr", "show"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        current_iface = None
+        for line in out.splitlines():
+            iface_match = re.match(r"^\d+:\s+(\S+?)(?:@\S+)?:\s+<([^>]*)>", line)
+            if iface_match:
+                current_iface = iface_match.group(1)
+                flags = iface_match.group(2).split(",")
+                if "UP" not in flags:
+                    current_iface = None
+                continue
+            if current_iface:
+                addr_match = re.match(r"^\s+inet\s+(\d+\.\d+\.\d+\.\d+)/\d+", line)
+                if addr_match:
+                    ip = addr_match.group(1)
+                    if not ip.startswith("127."):
+                        result[current_iface] = ip
+    except Exception:
+        pass
+    return result
+
+
 def get_network_interfaces():
     interfaces = []
+    seen: set[str] = set()
     addrs = psutil.net_if_addrs()
     stats = psutil.net_if_stats()
+
     for iface, addr_list in addrs.items():
         if iface not in stats or not stats[iface].isup:
             continue
@@ -147,6 +178,13 @@ def get_network_interfaces():
         if not ip or ip.startswith("127."):
             continue
         interfaces.append({"name": iface, "ip": ip})
+        seen.add(iface)
+
+    fallback = _get_interfaces_from_ip_addr()
+    for iface, ip in fallback.items():
+        if iface not in seen:
+            interfaces.append({"name": iface, "ip": ip})
+
     return interfaces
 
 

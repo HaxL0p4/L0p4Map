@@ -601,8 +601,23 @@ class MainWindow(QMainWindow):
         title = QLabel("L0p4Map")
         title.setObjectName("title_label")
 
-        self.subnet_label = QLabel("subnet detection...")
+        self.subnet_label = QLineEdit()
         self.subnet_label.setObjectName("subnet_label")
+        self.subnet_label.setPlaceholderText("subnet (es. 10.10.10.0/24)")
+        self.subnet_label.setFixedWidth(210)
+        self.subnet_label.setStyleSheet("""
+                QLineEdit#subnet_label {
+                    background-color: transparent;
+                    color: #888888;
+                    border: none;
+                    border-bottom: 1px solid transparent;
+                    font-size: 12px;
+                }
+                QLineEdit#subnet_label:focus {
+                    color: #00ff99;
+                    border-bottom: 1px solid #00ff99;
+                }
+        """)
 
         self.iface_selector = QComboBox()
         self.iface_selector.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -658,8 +673,28 @@ class MainWindow(QMainWindow):
 
     def _on_iface_changed(self,index):
         iface = self.iface_selector.itemData(index)
-        if iface:
-            self.subnet_label.setText(f"subnet: {iface['ip']}")
+        if not iface:
+            return
+        try:
+            self.subnet_label.setText(get_local_subnet(iface["name"]))
+        except Exception:
+            self.subnet_label.clear()
+
+    def _resolve_subnet(self):
+        manual = self.subnet_label.text().strip()
+        if manual:
+            try:
+                return str(ipaddress.ip_network(manual, strict=False))
+            except ValueError:
+                pass
+
+        iface = self.iface_selector.currentData()
+        if not iface:
+            return None
+        try:
+            return get_local_subnet(iface["name"])
+        except Exception:
+            return None
 
     def _build_home_page(self):
 
@@ -1100,8 +1135,10 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'live_worker') and self.live_worker.isRunning():
             return
 
-        iface = self.iface_selector.currentData()
-        subnet = get_local_subnet(iface["name"])
+        subnet = self._resolve_subnet()
+        if not subnet:
+            self.statusBar().showMessage("No subnet available for live scan.")
+            return
 
         self.live_worker = ScanWorker(subnet)
         self.live_worker.finished.connect(self._on_live_scan_finished)
@@ -1736,14 +1773,16 @@ class MainWindow(QMainWindow):
             btn.setEnabled(True)
 
     def _start_scan(self):
+        subnet = self._resolve_subnet()
+        if not subnet:
+            self.statusBar().showMessage("No subnet available — select an interface with an IP or enter one manually.")
+            return
+
         self.scan_button.setEnabled(False)
         self.btn_export_graph.setEnabled(False)
         self.statusBar().showMessage("Scanning...")
         self.table.setRowCount(0)
-
-        iface = self.iface_selector.currentData()
-        subnet = get_local_subnet(iface["name"])
-        self.subnet_label.setText(f"subnet: {subnet}")
+        self.subnet_label.setText(subnet)
 
         self.worker = ScanWorker(subnet)
         self.worker.finished.connect(self._on_scan_finished)
@@ -1767,11 +1806,7 @@ class MainWindow(QMainWindow):
         self.btn_export_graph.setDisabled(False)
 
     def _build_topology(self, hosts: list) -> dict:
-        try:
-            iface = self.iface_selector.currentData()
-            subnet_str = get_local_subnet(iface["name"]) if iface else None
-        except Exception:
-            subnet_str = None
+        subnet_str = self._resolve_subnet()
 
         gateway_ip = None
         gateway_candidates = []

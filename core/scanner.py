@@ -150,6 +150,8 @@ def _get_interfaces_from_ip_addr() -> dict[str, str]:
                 flags = iface_match.group(2).split(",")
                 if "UP" not in flags:
                     current_iface = None
+                elif current_iface not in result:
+                    result[current_iface] = ""
                 continue
             if current_iface:
                 addr_match = re.match(r"^\s+inet\s+(\d+\.\d+\.\d+\.\d+)/\d+", line)
@@ -169,20 +171,20 @@ def get_network_interfaces():
     stats = psutil.net_if_stats()
 
     for iface, addr_list in addrs.items():
-        if iface not in stats or not stats[iface].isup:
+        if iface == "lo" or iface not in stats or not stats[iface].isup:
             continue
-        ip = None
+        ip = ""
         for addr in addr_list:
             if addr.family == socket.AF_INET:
                 ip = addr.address
-        if not ip or ip.startswith("127."):
+        if ip.startswith("127."):
             continue
         interfaces.append({"name": iface, "ip": ip})
         seen.add(iface)
 
     fallback = _get_interfaces_from_ip_addr()
     for iface, ip in fallback.items():
-        if iface not in seen:
+        if iface not in seen and iface != "lo":
             interfaces.append({"name": iface, "ip": ip})
 
     return interfaces

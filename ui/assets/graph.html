@@ -130,6 +130,7 @@
   <div class="item"><div class="dot" style="border-color:#cc0000;background:#2e0000"></div> Raspberry Pi</div>
   <div class="item"><div class="dot" style="border-color:#9900ff;background:#1a0033"></div> Virtual Machine</div>
   <div class="item"><div class="dot" style="border-color:#444444;background:#1a1a1a"></div> Unknown</div>
+  <div class="item"><div class="dot" style="border-color:#ffcc00;background:#332b00"></div> Embedded service (default creds risk)</div>
   <div class="sep"></div>
   <div class="item">
     <div class="edge-sample" style="background:repeating-linear-gradient(90deg,#333 0,#333 4px,transparent 4px,transparent 8px)"></div>
@@ -207,6 +208,10 @@ function makeTooltip(role, device, style) {
     ? `<div style="color:#888;margin-bottom:2px;margin-top:2px">SNMP</div>
        <div style="color:#aaaaaa;margin-bottom:0;font-size:10px;word-break:break-all">${device.snmp_desc.substring(0, 80)}${device.snmp_desc.length > 80 ? "…" : ""}</div>`
     : "";
+  const embeddedRow = device.embedded_device
+    ? `<div style="color:#ffcc00;margin-bottom:2px;margin-top:2px">EMBEDDED SERVICE</div>
+       <div style="color:#ffcc00;margin-bottom:0;font-size:10px">${device.embedded_device} — ships with known default credentials, verify manually</div>`
+    : "";
   el.innerHTML = `
     <div style="color:${style.border};font-weight:bold;margin-bottom:6px;letter-spacing:1px">${style.label}</div>
     <div style="color:#888;margin-bottom:2px">IP</div>
@@ -222,7 +227,8 @@ function makeTooltip(role, device, style) {
       <div><div style="color:#888;margin-bottom:2px">OS HINT</div><div style="color:#e0e0e0">${osHint}</div></div>
     </div>
     <div style="color:#888;margin-bottom:2px">OPEN PORTS</div>
-    <div style="color:#e0e0e0;margin-bottom:${snmpRow ? "6px" : "0"}">${ports}</div>
+    <div style="color:#e0e0e0;margin-bottom:${(snmpRow || embeddedRow) ? "6px" : "0"}">${ports}</div>
+    ${embeddedRow}
     ${snmpRow}
   `;
   return el;
@@ -230,7 +236,7 @@ function makeTooltip(role, device, style) {
 
 function makeInternetTooltip() {
   const el = document.createElement("div");
-  el.innerHTML = `<div style="color:#555;font-weight:bold;letter-spacing:1px">INTERNET</div><div style="color:#333;font-size:10px;margin-top:4px">External network uplink</div>`;
+  el.innerHTML = `<div  style="color:#555;font-weight:bold;letter-spacing:1px">INTERNET</div><div style="color:#333;font-size:10px;margin-top:4px">External network uplink</div>`;
   return el;
 }
 
@@ -434,28 +440,31 @@ function _renderTopology(topology) {
     const hostname = (device.hostname && device.hostname !== device.ip) ? device.hostname : "";
     const level = (levelMap[device.ip] !== undefined) ? levelMap[device.ip] : 3;
     const isHighLevel = level <= 2;
+    const flagged = !!device.embedded_device;
+    const borderColor = flagged ? "#ffcc00" : style.border;
+    const label = device.ip + (hostname ? "\n" + hostname : "") + (flagged ? "\n⚠ " + device.embedded_device : "");
 
     nodes.add({
       id: device.ip,
-      label: device.ip + (hostname ? "\n" + hostname : ""),
+      label: label,
       title: makeTooltip(role, device, style),
       level: level,
       color: {
         background: style.bg,
-        border: style.border,
+        border: borderColor,
         highlight: { background: style.bg, border: "#00ff99" },
-        hover: { background: style.bg, border: style.border },
+        hover: { background: style.bg, border: borderColor },
       },
       size: style.size,
       font: {
-        color: role === "gateway" ? "#00ff99" : (isHighLevel ? "#aaaaaa" : "#666666"),
+        color: flagged ? "#ffcc00" : (role === "gateway" ? "#00ff99" : (isHighLevel ? "#aaaaaa" : "#666666")),
         size: 10,
-        bold: role === "gateway",
+        bold: role === "gateway" || flagged,
         face: "monospace",
       },
       shadow: {
         enabled: true,
-        color: style.border + "44",
+        color: borderColor + "44",
         size: role === "gateway" ? 14 : (isHighLevel ? 10 : 6),
         x: 0,
         y: 0,

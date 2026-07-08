@@ -557,6 +557,7 @@ def _enrich_host(host: dict, known_gateway_ip: str | None) -> dict:
 
     open_ports = _probe_open_ports(ip, TOPOLOGY_PROBE_PORTS, timeout=0.4)
     host["open_ports"] = open_ports
+    host["embedded_device"] = fingerprint_embedded_device(ip, open_ports) if open_ports else ""
 
     snmp_desc = None
     if 161 in open_ports or ttl is None or (ttl is not None and ttl > 128):
@@ -639,3 +640,180 @@ def _arp_resolve_mac(ip: str, subnet: str) -> str | None:
             return reply[Ether].src
     except Exception:
         pass
+
+
+EMBEDDED_DEVICE_SIGNATURES = {
+    "hp ilo": ["integrated lights-out", "ilo standard", "hp ilo"],
+    "infoprint": ["infoprint", "ricoh infoprint"],
+    "lantronix xport": ["xport", "lantronix"],
+    "sato printer": ["sato", "nicelabel sato"],
+    "zebra printer": ["zebra technologies", "zebra printer", "zpl"],
+}
+
+
+def _grab_http_banner(ip: str, port: int, timeout: float = 1.0) -> str:
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        sock.connect((ip, port))
+        sock.sendall(b"GET / HTTP/1.0\r\nHost: " + ip.encode() + b"\r\n\r\n")
+        data = b""
+        while len(data) < 4096:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            data += chunk
+        sock.close()
+        return data.decode("latin-1", errors="ignore")
+    except Exception:
+        return ""
+
+
+def fingerprint_embedded_device(ip: str, open_ports: list[int]) -> str:
+    for port in (p for p in (80, 443, 8080) if p in open_ports):
+        banner = _grab_http_banner(ip, port).lower()
+        if not banner:
+            continue
+        for device_name, signatures in EMBEDDED_DEVICE_SIGNATURES.items():
+            if any(sig in banner for sig in signatures):
+                return device_name
+    return ""
+
+
+def _local_networks() -> list[ipaddress.IPv4Network]:
+    nets = []
+    try:
+        for _, addr_list in psutil.net_if_addrs().items():
+            for addr in addr_list:
+                if addr.family == socket.AF_INET and addr.netmask:
+                    try:
+                        nets.append(
+                            ipaddress.IPv4Network(
+                                f"{addr.address}/{addr.netmask}", strict=False
+                            )
+                        )
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    return nets
+
+
+def _is_local_ip(ip: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return any(addr in net for net in _local_networks())
+
+
+def parse_target_range(target: str) -> list[str]:
+    target = target.strip()
+    m = re.match(r"^(\d{1,3}\.\d{1,3}\.\d{1,3}\.)(\d{1,3})-(\d{1,3})$", target)
+    if m:
+        prefix, start, end = m.groups()
+        start, end = int(start), int(end)
+        if start > end:
+            start, end = end, start
+        return [f"{prefix}{i}" for i in range(start, end + 1)]
+    try:
+        ipaddress.ip_address(target)
+        return [target]
+    except ValueError:
+        pass
+    try:
+        return [str(ip) for ip in ipaddress.ip_network(target, strict=False).hosts()]
+    except ValueError:
+        return []
+
+
+def is_target_fully_local(target: str) -> bool:
+    ips = parse_target_range(target)
+    if not ips:
+        return False
+    return all(_is_local_ip(ip) for ip in ips)
+
+
+def _traceroute_hops(ip: str, max_hops: int = 15, timeout: float = 0.8) -> list[str | None]:
+    hops: list[str | None] = []
+    for ttl in range(1, max_hops + 1):
+        pkt = ScapyIP(dst=ip, ttl=ttl) / ICMP()
+        reply = sr1(pkt, timeout=timeout, verbose=False)
+        if reply is None:
+            hops.append(None)
+            continue
+        hops.append(reply.src)
+        if reply.src == ip:
+            break
+    return hops
+
+
+def _last_known_hop(hops: list[str | None]) -> str | None:
+    for hop in reversed(hops):
+        if hop:
+            return hop
+    return None
+
+
+def scan_range(target: str) -> list[dict]:
+    conf.verb = 0
+    known_gateway = get_default_gateway()
+    ip_list = parse_target_range(target)
+
+    def probe(ip: str) -> dict | None:
+        if _is_local_ip(ip):
+            mac = _arp_resolve_mac(ip, ip)
+            if not mac:
+                return None
+            return {"ip": ip, "mac": mac, "router_hop": None}
+
+        alive = sr1(ScapyIP(dst=ip) / ICMP(), timeout=1.0, verbose=False)
+        if alive is None:
+            return None
+
+        hops = _traceroute_hops(ip)
+        if hops and hops[-1] == ip:
+            hop = _last_known_hop(hops[:-1]) or known_gateway
+        else:
+            hop = _last_known_hop(hops) or known_gateway
+        return {"ip": ip, "mac": "", "router_hop": hop}
+
+    raw_hosts = []
+    with ThreadPoolExecutor(max_workers=16) as executor:
+        futures = {executor.submit(probe, ip): ip for ip in ip_list}
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                raw_hosts.append(result)
+
+    hosts = []
+    for raw in raw_hosts:
+        hosts.append(
+            {
+                "ip": raw["ip"],
+                "mac": raw["mac"],
+                "hostname": raw["ip"],
+                "vendor": "..." if raw["mac"] else "",
+                "ttl": None,
+                "os_hint": "unknown",
+                "open_ports": [],
+                "role": "unknown",
+                "snmp_desc": "",
+                "embedded_device": "",
+                "router_hop": raw["router_hop"],
+            }
+        )
+
+    with ThreadPoolExecutor(max_workers=16) as executor:
+        futures = {
+            executor.submit(_enrich_host, host, known_gateway): host for host in hosts
+        }
+        results = []
+        for future in as_completed(futures):
+            try:
+                results.append(future.result())
+            except Exception:
+                results.append(futures[future])
+
+    results.sort(key=lambda h: [int(x) for x in h["ip"].split(".")])
+    return results

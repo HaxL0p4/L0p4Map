@@ -21,7 +21,7 @@ import csv
 from scapy.all import ARP, Ether, srp, sniff, IP as ScapyIP, TCP,UDP, ICMP
 from collections import defaultdict
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from core.scanner import scan_network, get_local_subnet, check_root, get_network_interfaces, capture_traffic
+from core.scanner import scan_network, scan_range, is_target_fully_local, get_local_subnet, check_root, get_network_interfaces, capture_traffic
 from __main__ import __version__
 
 
@@ -120,6 +120,18 @@ class ScanWorker(QThread):
 
     def run(self):
         hosts = scan_network(self.subnet)
+        self.finished.emit(hosts)
+
+
+class RangeScanWorker(QThread):
+    finished = pyqtSignal(list)
+
+    def __init__(self, target):
+        super().__init__()
+        self.target = target
+
+    def run(self):
+        hosts = scan_range(self.target)
         self.finished.emit(hosts)
 
 
@@ -603,7 +615,7 @@ class MainWindow(QMainWindow):
 
         self.subnet_label = QLineEdit()
         self.subnet_label.setObjectName("subnet_label")
-        self.subnet_label.setPlaceholderText("subnet (es. 10.10.10.0/24)")
+        self.subnet_label.setPlaceholderText("subnet, IP or range")
         self.subnet_label.setFixedWidth(210)
         self.subnet_label.setStyleSheet("""
                 QLineEdit#subnet_label {
@@ -683,8 +695,15 @@ class MainWindow(QMainWindow):
     def _resolve_subnet(self):
         manual = self.subnet_label.text().strip()
         if manual:
+            if re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}-\d{1,3}$", manual):
+                return manual
             try:
                 return str(ipaddress.ip_network(manual, strict=False))
+            except ValueError:
+                pass
+            try:
+                ipaddress.ip_address(manual)
+                return manual
             except ValueError:
                 pass
 
@@ -1773,18 +1792,22 @@ class MainWindow(QMainWindow):
             btn.setEnabled(True)
 
     def _start_scan(self):
-        subnet = self._resolve_subnet()
-        if not subnet:
+        target = self._resolve_subnet()
+        if not target:
             self.statusBar().showMessage("No subnet available — select an interface with an IP or enter one manually.")
             return
 
         self.scan_button.setEnabled(False)
         self.btn_export_graph.setEnabled(False)
-        self.statusBar().showMessage("Scanning...")
         self.table.setRowCount(0)
-        self.subnet_label.setText(subnet)
+        self.subnet_label.setText(target)
 
-        self.worker = ScanWorker(subnet)
+        if is_target_fully_local(target):
+            self.statusBar().showMessage("Scanning...")
+            self.worker = ScanWorker(target)
+        else:
+            self.statusBar().showMessage("Scanning routed range (traceroute cartography)...")
+            self.worker = RangeScanWorker(target)
         self.worker.finished.connect(self._on_scan_finished)
         self.worker.start()
 
@@ -1882,6 +1905,8 @@ class MainWindow(QMainWindow):
             ip = host.get("ip", "")
             if ip == gateway_ip:
                 continue
+            if host.get("router_hop"):
+                continue
             if not gateway_ip:
                 continue
             if ip in intermediate_ips:
@@ -1910,8 +1935,38 @@ class MainWindow(QMainWindow):
                             pass
                 edges.append({"src": ip, "dst": parent, "type": "client"})
 
+        router_hosts = {}
+        seen_router_edges = set()
+        existing_ips = {h.get("ip") for h in hosts}
+
+        for host in hosts:
+            hop = host.get("router_hop")
+            host_ip = host.get("ip")
+            if not hop or hop == host_ip:
+                continue
+            if hop not in existing_ips and hop not in router_hosts:
+                router_hosts[hop] = {
+                    "ip": hop,
+                    "mac": "",
+                    "hostname": hop,
+                    "vendor": "",
+                    "ttl": None,
+                    "os_hint": "unknown",
+                    "open_ports": [],
+                    "role": "router",
+                    "snmp_desc": "",
+                    "embedded_device": "",
+                }
+            parent = gateway_ip or "internet"
+            if (hop, parent) not in seen_router_edges:
+                edges.append({"src": hop, "dst": parent, "type": "backbone"})
+                seen_router_edges.add((hop, parent))
+            if (host_ip, hop) not in seen_router_edges:
+                edges.append({"src": host_ip, "dst": hop, "type": "client"})
+                seen_router_edges.add((host_ip, hop))
+
         return {
-            "devices": hosts,
+            "devices": hosts + list(router_hosts.values()),
             "gateway": gateway_ip,
             "subnet": subnet_str,
             "subnets": list(subnets_map.values()),

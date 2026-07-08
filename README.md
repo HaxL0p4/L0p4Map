@@ -29,7 +29,7 @@ No bloat. No BS. Just raw network intelligence.
 - **ARP Network Scan** — fast host discovery with local IEEE OUI database lookup
 - **Range Cartography** — scan any IP / CIDR / range. routed ranges are mapped via traceroute (hosts grouped under their last-hop router)
 - **Hostname Resolution** — multi-method detection via reverse DNS, NetBIOS (Windows) and mDNS/Avahi (Linux, Mac, IoT)
-- **Device Fingerprinting** — TTL-based OS hint (Linux/macOS, Windows, network device), TCP port probing on topology-relevant ports, raw SNMP `sysDescr` query (no external libs
+- **Device Fingerprinting** — TTL-based OS hint (Linux/macOS, Windows, network device), TCP port probing on topology-relevant ports, raw SNMP `sysDescr` query (no external libs)
 - **Embedded Service Fingerprinting** — passively detects iLO / InfoPrint / XPort / SATO / Zebra via banner grabbing and flags them on the graph as devices known to ship with default credentials, for manual verification
 - **Role Detection** — automatic classification of each host: gateway, router, access point, switch, PC, Apple, mobile, Raspberry Pi, virtual machine, unknown — combining vendor, hostname, TTL, open ports and SNMP response
 - **Real Network Topology Graph** — hierarchical vis.js graph that reflects the actual network structure: gateway at the top, intermediate devices (routers/APs/switches) on a second tier, clients grouped below their parent. Toggleable between Hierarchical and Force Atlas layouts

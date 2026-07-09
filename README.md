@@ -127,7 +127,3 @@ This tool is designed for **authorized network auditing only**. Only use L0p4Map
 **HaxL0p4** — [GitHub](https://github.com/HaxL0p4)
 
 ---
-
-<div align="center">
-<sub>🚧 Under active development — star the repo to follow updates</sub>
-</div>

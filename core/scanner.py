@@ -1,10 +1,13 @@
 import csv as _csv
 import ipaddress
 import os
+import platform
 import re
 import socket
 import struct
 import subprocess
+import threading
+import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -70,6 +73,51 @@ MOBILE_VENDORS = [
     "sony mobile",
     "zte",
 ]
+
+
+class ContinuousMonitor:
+    def __init__(self):
+        self._running = False
+        self._thread = None
+        self._callback = None
+        self._interval = 60
+        self._last_hosts = []
+        self._lock = threading.Lock()
+        self._iface = None
+        self._subnet = None
+
+    def start(self, subnet: str, iface: str = None, interval: int = 60, callback=None):
+        self._running = True
+        self._interval = interval
+        self._callback = callback
+        self._iface = iface
+        self._subnet = subnet
+        self._thread = threading.Thread(target=self._monitor_loop, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=2)
+
+    def get_last_hosts(self):
+        with self._lock:
+            return list(self._last_hosts)
+
+    def _monitor_loop(self):
+        while self._running:
+            try:
+                hosts = scan_network(self._subnet)
+                with self._lock:
+                    self._last_hosts = hosts
+                if self._callback:
+                    self._callback(hosts)
+            except Exception:
+                pass
+            for _ in range(self._interval):
+                if not self._running:
+                    break
+                time.sleep(1)
 
 
 def capture_traffic(iface: str, duration: int = 15) -> list[dict]:
@@ -182,10 +230,11 @@ def get_network_interfaces():
         interfaces.append({"name": iface, "ip": ip})
         seen.add(iface)
 
-    fallback = _get_interfaces_from_ip_addr()
-    for iface, ip in fallback.items():
-        if iface not in seen and iface != "lo":
-            interfaces.append({"name": iface, "ip": ip})
+    if platform.system() == "Linux":
+        fallback = _get_interfaces_from_ip_addr()
+        for iface, ip in fallback.items():
+            if iface not in seen and iface != "lo":
+                interfaces.append({"name": iface, "ip": ip})
 
     return interfaces
 
@@ -224,35 +273,73 @@ def get_local_subnet(iface_name=None) -> str:
 
 
 def get_default_gateway() -> str | None:
-    try:
-        with open("/proc/net/route") as f:
-            for line in f.readlines()[1:]:
-                fields = line.strip().split()
-                if len(fields) < 3:
-                    continue
-                if fields[1] == "00000000":
-                    gw_hex = fields[2]
-                    gw_int = int(gw_hex, 16)
-                    gw = socket.inet_ntoa(struct.pack("<I", gw_int))
-                    if gw and not gw.startswith("0."):
-                        return gw
-    except Exception:
-        pass
-    try:
-        out = subprocess.check_output(
-            ["ip", "route", "show", "default"],
-            stderr=subprocess.DEVNULL,
-            text=True,
-        )
-        for token in out.split():
-            if token not in ("default", "via", "dev", "proto", "metric", "src"):
-                try:
-                    ipaddress.ip_address(token)
-                    return token
-                except ValueError:
-                    pass
-    except Exception:
-        pass
+    if platform.system() == "Windows":
+        try:
+            out = subprocess.check_output(
+                ["route", "print", "0.0.0.0"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            for line in out.splitlines():
+                parts = line.strip().split()
+                if len(parts) >= 3 and parts[0] == "0.0.0.0" and parts[1] == "0.0.0.0":
+                    return parts[2]
+        except Exception:
+            pass
+        try:
+            out = subprocess.check_output(
+                ["powershell", "-Command", "(Get-NetRoute -DestinationPrefix '0.0.0.0/0' | Select-Object -First 1).NextHop"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            gw = out.strip()
+            if gw:
+                return gw
+        except Exception:
+            pass
+    elif platform.system() == "Darwin":
+        try:
+            out = subprocess.check_output(
+                ["netstat", "-rn"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            for line in out.splitlines():
+                parts = line.strip().split()
+                if len(parts) >= 2 and parts[0] == "default":
+                    return parts[1]
+        except Exception:
+            pass
+    else:
+        try:
+            with open("/proc/net/route") as f:
+                for line in f.readlines()[1:]:
+                    fields = line.strip().split()
+                    if len(fields) < 3:
+                        continue
+                    if fields[1] == "00000000":
+                        gw_hex = fields[2]
+                        gw_int = int(gw_hex, 16)
+                        gw = socket.inet_ntoa(struct.pack("<I", gw_int))
+                        if gw and not gw.startswith("0."):
+                            return gw
+        except Exception:
+            pass
+        try:
+            out = subprocess.check_output(
+                ["ip", "route", "show", "default"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            for token in out.split():
+                if token not in ("default", "via", "dev", "proto", "metric", "src"):
+                    try:
+                        ipaddress.ip_address(token)
+                        return token
+                    except ValueError:
+                        pass
+        except Exception:
+            pass
     return None
 
 

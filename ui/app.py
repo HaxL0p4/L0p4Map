@@ -1,4 +1,11 @@
 import sys
+import os
+import platform
+
+if platform.system() == "Windows":
+    import ctypes
+    ctypes.windll.shell32.IsUserAnAdmin()
+
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QSplitter,
@@ -16,12 +23,11 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QUrl, QSize, QUrl as Q
 from PyQt6.QtGui import QFont, QColor, QIcon, QPixmap, QPainter, QAction, QDesktopServices
 from PyQt6.QtSvg import QSvgRenderer
 import subprocess
-import os
 import csv
 from scapy.all import ARP, Ether, srp, sniff, IP as ScapyIP, TCP,UDP, ICMP
 from collections import defaultdict
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from core.scanner import scan_network, scan_range, is_target_fully_local, get_local_subnet, check_root, get_network_interfaces, capture_traffic
+from core.scanner import scan_network, scan_range, is_target_fully_local, get_local_subnet, check_root, get_network_interfaces, capture_traffic, ContinuousMonitor
 from __main__ import __version__
 
 
@@ -447,6 +453,9 @@ class MainWindow(QMainWindow):
 
         self.live_timer = QTimer()
         self.live_timer.timeout.connect(self._live_scan)
+
+        self.continuous_monitor = None
+        self._monitor_active = False
 
     def _apply_theme(self):
         self.setStyleSheet("""
@@ -1122,6 +1131,38 @@ class MainWindow(QMainWindow):
             }
         """)
         header_layout.addWidget(self.btn_live)
+
+        header_layout.addSpacing(10)
+
+        self.btn_monitor = QPushButton("[ CONTINUOUS ]")
+        self.btn_monitor.setFixedWidth(110)
+        self.btn_monitor.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_monitor.setCheckable(True)
+        self.btn_monitor.clicked.connect(self._toggle_continuous_monitor)
+        self.btn_monitor.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #444444;
+                border: 1px solid #333333;
+                padding: 4px 10px;
+                font-size: 10px;
+                font-weight: bold;
+            }
+            QPushButton:checked {
+                background-color: #330022;
+                color: #ff00aa;
+                border: 1px solid #ff00aa;
+            }
+            QPushButton:hover {
+                color: #ff00aa;
+                border-color: #ff00aa;
+            }
+            QPushButton:focus {
+                outline: 0;
+            }
+        """)
+        header_layout.addWidget(self.btn_monitor)
+
         layout.addWidget(header)
 
         self.graph_view = QWebEngineView()
@@ -1137,6 +1178,36 @@ class MainWindow(QMainWindow):
 
         return page
 
+    def _toggle_continuous_monitor(self):
+        if self.btn_monitor.isChecked():
+            subnet = self._resolve_subnet()
+            if not subnet:
+                self.statusBar().showMessage("No subnet available for continuous monitoring.")
+                self.btn_monitor.setChecked(False)
+                return
+            self._monitor_active = True
+            iface = self.iface_selector.currentData()
+            iface_name = iface["name"] if iface else None
+            self.continuous_monitor = ContinuousMonitor()
+            self.continuous_monitor.start(
+                subnet=subnet,
+                iface=iface_name,
+                interval=60,
+                callback=self._on_continuous_update
+            )
+            self.statusBar().showMessage("Continuous monitoring active — 60s refresh")
+        else:
+            self._monitor_active = False
+            if self.continuous_monitor:
+                self.continuous_monitor.stop()
+                self.continuous_monitor = None
+            self.statusBar().showMessage("Continuous monitoring stopped.")
+
+    def _on_continuous_update(self, hosts):
+        if hasattr(self, 'graph_view') and self.graph_ready:
+            self._update_graph(hosts)
+            self.last_hosts = hosts
+            self.statusBar().showMessage(f"Continuous update — {len(hosts)} devices")
 
     def _toggle_live(self):
         if self.btn_live.isChecked():
@@ -1148,7 +1219,6 @@ class MainWindow(QMainWindow):
             self.live_timer.stop()
             self.live_interval.setDisabled(True)
             self.statusBar().showMessage("Live Monitoring Stopped.")
-
 
     def _live_scan(self):
         if hasattr(self, 'live_worker') and self.live_worker.isRunning():
@@ -1169,7 +1239,6 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
         f"Live update — {len(hosts)} devices — {self.live_interval.currentText()} refresh")
 
-
     def _export_graph(self, index):
         if index == 0:
             return
@@ -1182,10 +1251,8 @@ class MainWindow(QMainWindow):
 
         if fmt == "csv":
             self._export_graph_csv()
-            pass
         else:
             self._export_graph_png()
-            pass
 
         self.btn_export_graph.setCurrentIndex(0)
 
@@ -1224,7 +1291,6 @@ class MainWindow(QMainWindow):
         self.graph_ready = True
         if hasattr(self, '_pending_graph_data'):
             self._update_graph(self._pending_graph_data)
-
 
     def _ta_send_to_scan(self, item):
         row = item.row()
@@ -1456,7 +1522,6 @@ class MainWindow(QMainWindow):
 
         return page
 
-
     def _ta_start(self):
         iface = self.iface_selector.currentData()
         if not iface:
@@ -1556,7 +1621,6 @@ class MainWindow(QMainWindow):
             if self._ta_packet_count > 0:
                 self.btn_ta_export.setEnabled(True)
 
-
     def _resolve_ip_label(self, ip: str) -> str:
         if hasattr(self, 'last_hosts'):
             for h in self.last_hosts:
@@ -1565,7 +1629,6 @@ class MainWindow(QMainWindow):
                     if hostname != ip:
                         return f"{ip} ({hostname.split('.')[0]})"
         return ip
-
 
     def _ta_add_row(self, pkt: dict):
         proto_colors = {
@@ -1638,11 +1701,9 @@ class MainWindow(QMainWindow):
                 f"// {self._ta_packet_count} packets captured"
             )
 
-
     def _ta_on_finished(self):
         self.btn_start_capture.setEnabled(True)
         self.btn_stop_capture.setEnabled(False)
-
 
     def _build_table(self):
         self.table = QTableWidget()
@@ -1682,7 +1743,6 @@ class MainWindow(QMainWindow):
         menu.addAction(ta_action)
 
         menu.exec(self.table.viewport().mapToGlobal(pos))
-
 
     def _build_detail_panel(self):
         self.detail_panel = QWidget()
@@ -1921,8 +1981,7 @@ class MainWindow(QMainWindow):
                     inter_hostname = (inter_host.get("hostname") or "").lower()
                     if any(k in inter_vendor for k in ["tp-link", "netgear", "dlink", "linksys",
                                                         "tenda", "zyxel", "aruba", "ubiquiti",
-                                                        "ruckus", "meraki"]) or \
-                       any(k in inter_hostname for k in ["ap", "wifi", "wlan", "access"]):
+                                                        "ruckus", "meraki"]) or                        any(k in inter_hostname for k in ["ap", "wifi", "wlan", "access"]):
                         try:
                             host_net = ipaddress.ip_address(ip)
                             inter_net = ipaddress.ip_address(inter_ip)
@@ -1982,7 +2041,7 @@ class MainWindow(QMainWindow):
             return
         topology = self._build_topology(hosts)
         data = json.dumps(topology)
-        data = data.replace("'", "\\'")
+        data = data.replace("'", "\'")
         self.graph_view.page().runJavaScript(f"updateGraph('{data}')")
 
     def _go_to_scan(self):
@@ -2003,7 +2062,12 @@ class MainWindow(QMainWindow):
         self.output_box.clear()
         self.output_box.append(f"// ping {ip}\n")
 
-        self.action_worker = ActionWorker(["ping", "-c", "4", ip])
+        if platform.system() == "Windows":
+            cmd = ["ping", "-n", "4", ip]
+        else:
+            cmd = ["ping", "-c", "4", ip]
+
+        self.action_worker = ActionWorker(cmd)
         self.action_worker.output.connect(self.output_box.append)
         self.action_worker.finished.connect(
             lambda: self.output_box.append("\n// done.")
@@ -2023,7 +2087,12 @@ class MainWindow(QMainWindow):
         self.btn_traceroute.clicked.disconnect()
         self.btn_traceroute.clicked.connect(self._stop_action)
 
-        self.action_worker = ActionWorker(["traceroute", "-I", ip])
+        if platform.system() == "Windows":
+            cmd = ["tracert", ip]
+        else:
+            cmd = ["traceroute", "-I", ip]
+
+        self.action_worker = ActionWorker(cmd)
         self.action_worker.output.connect(self.output_box.append)
         self.action_worker.finished.connect(self._on_action_finished)
         self.action_worker.start()
@@ -2502,15 +2571,20 @@ class MainWindow(QMainWindow):
         if not url:
             return
 
-        original_user = os.environ.get('SUDO_USER')
-        if original_user:
-            subprocess.Popen(
-                ["sudo", "-u", original_user, "xdg-open", url],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
+        if platform.system() == "Windows":
+            os.startfile(url)
+        elif platform.system() == "Darwin":
+            subprocess.Popen(["open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         else:
-            QDesktopServices.openUrl(QtUrl(url))
+            original_user = os.environ.get('SUDO_USER')
+            if original_user:
+                subprocess.Popen(
+                    ["sudo", "-u", original_user, "xdg-open", url],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+            else:
+                QDesktopServices.openUrl(QtUrl(url))
 
     def _as_update_history(self, target: str, result: dict):
         for row in range(self.as_history.rowCount()):
@@ -2542,8 +2616,10 @@ class MainWindow(QMainWindow):
         if target in self._as_results:
             self._as_display(self._as_results[target])
 
+
 if __name__ == "__main__":
-    check_root()
+    if platform.system() == "Linux":
+        check_root()
     os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--no-sandbox --disable-gpu --disable-software-rasterizer"
     os.environ["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
     app = QApplication(sys.argv)

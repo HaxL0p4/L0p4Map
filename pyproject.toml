@@ -1,10 +1,10 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "l0p4map"
-version = "0.2.0"
+version = "1.0.0"
 description = "Professional network monitoring and visualization tool"
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }

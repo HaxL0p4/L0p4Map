@@ -28,7 +28,7 @@ from scapy.all import ARP, Ether, srp, sniff, IP as ScapyIP, TCP,UDP, ICMP
 from collections import defaultdict
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from core.scanner import scan_network, scan_range, is_target_fully_local, get_local_subnet, check_root, get_network_interfaces, capture_traffic, ContinuousMonitor
-from __main__ import __version__
+from main import __version__
 
 
 def load_colored_svg(path, color, size=24):

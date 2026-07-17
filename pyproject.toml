@@ -37,7 +37,7 @@ Homepage = "https://github.com/HaxL0p4/L0p4Map"
 "Bug Tracker" = "https://github.com/HaxL0p4/L0p4Map/issues"
 
 [project.scripts]
-l0p4map = "__main__:main"
+l0p4map = "main:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

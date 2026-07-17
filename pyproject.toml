@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "l0p4map"
-version = "1.0.0"
+version = "1.0.2"
 description = "Professional network monitoring and visualization tool"
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }

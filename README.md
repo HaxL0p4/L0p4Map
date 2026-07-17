@@ -106,6 +106,14 @@ Now available on Linux, Windows and macOS.
 
 ### Linux
 
+**Arch Linux** users can install directly from the AUR:
+
+```bash
+yay -S l0p4map
+```
+
+Alternatively, on any Linux distribution:
+
 ```bash
 git clone https://github.com/HaxL0p4/L0p4Map.git
 cd L0p4Map

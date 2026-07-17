@@ -39,6 +39,9 @@ Homepage = "https://github.com/HaxL0p4/L0p4Map"
 [project.scripts]
 l0p4map = "main:main"
 
+[tool.setuptools]
+py-modules = ["main"]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["core*", "ui*"]

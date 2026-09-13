@@ -2,10 +2,6 @@ import sys
 import os
 import platform
 
-if platform.system() == "Windows":
-    import ctypes
-    ctypes.windll.shell32.IsUserAnAdmin()
-
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QSplitter,
@@ -28,7 +24,7 @@ from scapy.all import ARP, Ether, srp, sniff, IP as ScapyIP, TCP,UDP, ICMP
 from collections import defaultdict
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from core.scanner import scan_network, scan_range, is_target_fully_local, get_local_subnet, check_root, get_network_interfaces, capture_traffic, ContinuousMonitor
-from __main__ import __version__
+from main import __version__
 
 
 def load_colored_svg(path, color, size=24):
@@ -2618,8 +2614,7 @@ class MainWindow(QMainWindow):
 
 
 if __name__ == "__main__":
-    if platform.system() == "Linux":
-        check_root()
+    check_root()
     os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--no-sandbox --disable-gpu --disable-software-rasterizer"
     os.environ["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
     app = QApplication(sys.argv)

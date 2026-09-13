@@ -240,7 +240,19 @@ def get_network_interfaces():
 
 
 def check_root():
-    if os.getuid() != 0:
+    if platform.system() == "Windows":
+        try:
+            import ctypes
+
+            is_admin = bool(ctypes.windll.shell32.IsUserAnAdmin())
+        except (AttributeError, OSError):
+            is_admin = False
+        if not is_admin:
+            raise PermissionError("Run the program from a terminal opened as Administrator!")
+        return
+
+    get_euid = getattr(os, "geteuid", None)
+    if get_euid is None or get_euid() != 0:
         raise PermissionError("Execute the program with SUDO!")
 
 

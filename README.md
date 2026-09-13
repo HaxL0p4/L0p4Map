@@ -140,8 +140,7 @@ chmod +x L0p4Map.sh
 git clone https://github.com/HaxL0p4/L0p4Map.git
 cd L0p4Map
 python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
 Make sure nmap and Npcap are installed and available in the system PATH before launching the tool.
@@ -163,8 +162,7 @@ sudo ./L0p4Map.sh
 Open a terminal (PowerShell or CMD) as Administrator, then:
 
 ```powershell
-venv\Scripts\activate
-python L0p4Map.py
+.\venv\Scripts\python.exe L0p4Map.py
 ```
 
 ### Workflow

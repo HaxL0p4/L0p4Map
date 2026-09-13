@@ -1,4 +1,5 @@
 __main__.py usr/share/l0p4map
+main.py usr/share/l0p4map
 core/ usr/share/l0p4map
 ui/ usr/share/l0p4map
 debian/l0p4map.sh usr/bin/l0p4map

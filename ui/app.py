@@ -1,6 +1,7 @@
 import sys
 import os
 import platform
+import shlex
 
 if platform.system() == "Windows":
     import ctypes
@@ -11,7 +12,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QSplitter,
     QLabel, QPushButton, QTableWidget,
     QTableWidgetItem, QHeaderView, QTextEdit,
-    QComboBox, QStackedWidget, QCheckBox, QLineEdit, QScrollArea,
+    QComboBox, QStackedWidget, QCheckBox, QRadioButton, QButtonGroup, QLineEdit, QScrollArea,
     QFileDialog, QSplashScreen, QMenu, QProgressBar
 )
 import ipaddress
@@ -28,6 +29,7 @@ from scapy.all import ARP, Ether, srp, sniff, IP as ScapyIP, TCP,UDP, ICMP
 from collections import defaultdict
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from core.scanner import scan_network, scan_range, is_target_fully_local, get_local_subnet, check_root, get_network_interfaces, capture_traffic, ContinuousMonitor
+from core.nmap_options import TCP_FLAGS, PORT_FLAGS, TIMING_FLAGS, SCAN_PRESETS, build_scan_command
 from __main__ import __version__
 
 
@@ -791,16 +793,48 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.scan_target)
         layout.setSpacing(8)
 
+        self._scan_updating = False
+        self._scan_busy = False
+        self._scan_preset_buttons = {}
+        profiles = QHBoxLayout()
+        for name, label in (("basic", "Basic"), ("complete", "Complete")):
+            button = QPushButton(label)
+            button.setCheckable(True)
+            button.setStyleSheet("QPushButton { padding: 6px 8px; } QPushButton:checked { background-color: #003c2b; }")
+            button.clicked.connect(lambda checked=False, name=name: self._apply_scan_preset(name))
+            self._scan_preset_buttons[name] = button
+            profiles.addWidget(button)
+        layout.addLayout(profiles)
+        self.scan_profile_hint = QLabel()
+        self.scan_profile_hint.setWordWrap(True)
+        self.scan_profile_hint.setStyleSheet("color: #aaaaaa; font-size: 11px;")
+        layout.addWidget(self.scan_profile_hint)
+
+        self.btn_run_scan = QPushButton("[ RUN SCAN ]")
+        self.btn_run_scan.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_run_scan.clicked.connect(self._run_nmap_scan)
+        layout.addWidget(self.btn_run_scan)
+
+        self._scan_groups = [QButtonGroup(self) for _ in range(3)]
+        for group in self._scan_groups:
+            group.setExclusive(True)
         self._scan_checks = {}
         sections = {
-        "SCAN TYPE": [
-            ("-F", "Fast scan"),
+        "TCP METHOD (ONE)": [
             ("-sS", "SYN scan"),
             ("-sT", "TCP connect"),
-            ("-sU", "UDP scan"),
             ("-sN", "NULL scan"),
             ("-sX", "Xmas scan"),
-            ("-p-", "All ports"),
+        ],
+        "UDP": [
+            ("-sU", "Include UDP scan"),
+        ],
+        "PORT RANGE (ONE)": [
+            ("", "Default (1,000 ports)"),
+            ("-F", "Fast (100 ports)"),
+            ("-p-", "All ports (65,535)"),
+        ],
+        "GENERAL": [
             ("-A", "Aggressive"),
             ("-Pn", "No ping"),
         ],
@@ -859,30 +893,36 @@ class MainWindow(QMainWindow):
             layout.addSpacing(2)
 
             for flag, description in options:
-                cb = QCheckBox(f"{description}")
+                group_index = next((index for index, flags in enumerate((TCP_FLAGS, PORT_FLAGS, TIMING_FLAGS)) if flag in flags), None)
+                cb = QRadioButton(description) if group_index is not None else QCheckBox(description)
+                if group_index is not None:
+                    self._scan_groups[group_index].addButton(cb)
                 cb.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-                cb.setToolTip(flag)
+                cb.setToolTip(flag or "Default ports; choose this when specifying custom ports.")
                 cb.setStyleSheet("""
-                    QCheckBox {
+                    QCheckBox, QRadioButton {
                         color: #aaaaaa;
                         font-size: 12px;
                         spacing: 6px;
                     }
-                    QCheckBox:hover {
+                    QCheckBox:hover, QRadioButton:hover {
                         color: #e0e0e0;
                     }
-                    QCheckBox::indicator {
+                    QCheckBox::indicator, QRadioButton::indicator {
                         width: 12px;
                         height: 12px;
                         border: 1px solid #333;
                         background-color: #111;
                     }
-                    QCheckBox::indicator:checked {
+                    QCheckBox::indicator:checked, QRadioButton::indicator:checked {
                         background-color: #00ff99;
                         border: 1px solid #00ff99;
                     }
+                    QRadioButton::indicator { border-radius: 6px; }
+                    QCheckBox:disabled, QRadioButton:disabled { color: #555555; }
             """)
                 self._scan_checks[flag] = cb
+                cb.toggled.connect(self._scan_options_changed)
                 layout.addWidget(cb)
             layout.addSpacing(4)
 
@@ -914,11 +954,6 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.custom_flags)
         layout.addSpacing(12)
 
-        self.btn_run_scan = QPushButton("[ RUN SCAN ]")
-        self.btn_run_scan.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.btn_run_scan.clicked.connect(self._run_nmap_scan)
-        layout.addWidget(self.btn_run_scan)
-
         self.btn_export_scan = QPushButton("[ EXPORT SCAN ]")
         self.btn_export_scan.setStyleSheet("QPushButton:pressed {font-size: 12px;}")
         self.btn_export_scan.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -930,7 +965,87 @@ class MainWindow(QMainWindow):
 
         layout.addStretch()
         scroll.setWidget(container)
+        self.custom_flags.textChanged.connect(self._scan_options_changed)
+        self.scan_target.textChanged.connect(self._refresh_scan_command)
+        self._apply_scan_preset("basic")
         return scroll
+
+    def _apply_scan_preset(self, name):
+        self._scan_updating = True
+        try:
+            for group in self._scan_groups:
+                group.setExclusive(False)
+            for flag, check in self._scan_checks.items():
+                check.setChecked(flag in SCAN_PRESETS[name])
+            self.custom_flags.clear()
+        finally:
+            for group in self._scan_groups:
+                group.setExclusive(True)
+            self._scan_updating = False
+        self._sync_scan_dependencies()
+        for profile, button in self._scan_preset_buttons.items():
+            button.setChecked(profile == name)
+        hint = ("100 most common TCP ports, normal timing." if name == "basic" else
+                "All 65,535 TCP and UDP ports, service versions, OS detection, and default scripts. This can take a long time.")
+        self.scan_profile_hint.setText(hint)
+        for button in self._scan_preset_buttons.values():
+            button.setToolTip(hint if button.isChecked() else "Apply this preset and clear custom flags.")
+        self._refresh_scan_command()
+
+    def _scan_options_changed(self, *_args):
+        if self._scan_updating:
+            return
+        self._sync_scan_dependencies()
+        for button in self._scan_preset_buttons.values():
+            button.setChecked(False)
+        self.scan_profile_hint.setText("Custom. Choose one TCP method; UDP is optional.")
+        self._refresh_scan_command()
+
+    def _sync_scan_dependencies(self):
+        self._scan_updating = True
+        try:
+            aggressive = self._scan_checks["-A"].isChecked()
+            for flag in ("-sV", "-O", "-sC"):
+                check = self._scan_checks[flag]
+                check.setEnabled(not aggressive)
+                check.setToolTip("Included in Aggressive (-A)." if aggressive else flag)
+                if aggressive:
+                    check.setChecked(False)
+            try:
+                custom = shlex.split(self.custom_flags.text())
+            except ValueError:
+                custom = []
+            os_detection = aggressive or self._scan_checks["-O"].isChecked() or any(flag in custom for flag in ("-O", "-A"))
+            guess = self._scan_checks["--osscan-guess"]
+            guess.setEnabled(os_detection)
+            guess.setToolTip("--osscan-guess" if os_detection else "Enable OS detection or Aggressive first.")
+            if not os_detection:
+                guess.setChecked(False)
+        finally:
+            self._scan_updating = False
+
+    def _scan_command(self, target):
+        selected = [flag for flag, check in self._scan_checks.items() if check.isChecked()]
+        return build_scan_command(selected, self.custom_flags.text().strip(), target)
+
+    def _refresh_scan_command(self, *_args):
+        if self._scan_updating or self._scan_busy:
+            return
+        target = self.scan_target.text().strip()
+        try:
+            cmd = self._scan_command(target or "<target>")
+            preview = "// " + subprocess.list2cmdline(cmd)
+            error = "" if target else "Enter a target before running."
+            color = "#00ff99"
+        except ValueError as exc:
+            error = str(exc)
+            preview = "// Invalid configuration: " + error
+            color = "#ff6666"
+        self.btn_run_scan.setEnabled(not error)
+        self.btn_run_scan.setToolTip(error)
+        if hasattr(self, "scan_cmd_label"):
+            self.scan_cmd_label.setText(preview)
+            self.scan_cmd_label.setStyleSheet(f"background-color: #080808; color: {color}; font-size: 11px; padding: 8px 12px;")
 
     def _export_scan(self):
         path, _ = QFileDialog.getSaveFileName(
@@ -952,6 +1067,8 @@ class MainWindow(QMainWindow):
         layout.setSpacing(0)
 
         self.scan_cmd_label = QLabel("// no active scan.")
+        self.scan_cmd_label.setWordWrap(True)
+        self.scan_cmd_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.scan_cmd_label.setStyleSheet("""
                 background-color: #080808;
                 color: #444444;
@@ -975,24 +1092,16 @@ class MainWindow(QMainWindow):
         """)
         self.scan_output.setPlaceholderText("// select options and run scan...")
         layout.addWidget(self.scan_output, stretch=1)
+        self._refresh_scan_command()
         return container
 
     def _run_nmap_scan(self):
         target = self.scan_target.text().strip()
-        if not target:
-            self.scan_output.append("// error: no target specified")
+        try:
+            cmd = self._scan_command(target)
+        except ValueError as exc:
+            self.scan_output.append(f"// Invalid configuration: {exc}")
             return
-
-        cmd = ["nmap"]
-        for flag, cb in self._scan_checks.items():
-            if cb.isChecked():
-                cmd.extend(flag.split())
-
-        custom = self.custom_flags.text().strip()
-        if custom:
-            cmd.extend(custom.split())
-
-        cmd.append(target)
 
         self.scan_cmd_label.setText("// " + " ".join(cmd))
         self.scan_cmd_label.setStyleSheet("""
@@ -1003,8 +1112,9 @@ class MainWindow(QMainWindow):
                 border-bottom: 1px solid #1a1a1a;
         """)
         self.scan_output.clear()
-        self.scan_output.append(f"// {''.join(cmd)}\n")
+        self.scan_output.append(f"// {subprocess.list2cmdline(cmd)}\n")
 
+        self._scan_busy = True
         self.btn_run_scan.setText("[ STOP ]")
         self.btn_run_scan.clicked.disconnect()
         self.btn_run_scan.clicked.connect(self._stop_nmap_scan)
@@ -1023,6 +1133,8 @@ class MainWindow(QMainWindow):
         self.btn_run_scan.setText("[ RUN SCAN ]")
         self.btn_run_scan.clicked.disconnect()
         self.btn_run_scan.clicked.connect(self._run_nmap_scan)
+        self._scan_busy = False
+        self._refresh_scan_command()
 
     def _on_nmap_finished(self):
         self.scan_output.append("\n// Done.")
@@ -1030,6 +1142,8 @@ class MainWindow(QMainWindow):
         self.btn_run_scan.setText("[ RUN SCAN ]")
         self.btn_run_scan.clicked.disconnect()
         self.btn_run_scan.clicked.connect(self._run_nmap_scan)
+        self._scan_busy = False
+        self._refresh_scan_command()
 
     def _build_graph_page(self):
         page = QWidget()

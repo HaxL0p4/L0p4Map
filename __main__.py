@@ -8,10 +8,16 @@ __version__ = "1.0.0"
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 
+from core.privileges import require_admin
+from core.windows_requirements import require_windows_dependencies
+from core.gui_runtime import configure_gui_environment
+
 
 def _check_root():
-    if os.getuid() != 0:
-        print("error: root privileges required (run with sudo)", file=sys.stderr)
+    try:
+        require_admin()
+    except PermissionError as exc:
+        print(f"error: {exc}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -83,6 +89,7 @@ def _output_table(hosts: list):
 
 def cmd_scan(args):
     _check_root()
+    _check_dependencies()
     from core.scanner import get_local_subnet, scan_network
 
     subnet = args.target
@@ -116,17 +123,13 @@ def cmd_scan(args):
 
 def cmd_gui(_args):
     _check_root()
-    import os
+    configure_gui_environment()
+    _check_dependencies()
 
     from PyQt6.QtCore import QTimer
     from PyQt6.QtWidgets import QApplication
 
     from ui.app import LogoIniziale, MainWindow
-
-    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
-        "--no-sandbox --disable-gpu --disable-software-rasterizer"
-    )
-    os.environ["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
 
     app = QApplication(sys.argv)
     logo = LogoIniziale()
@@ -135,6 +138,14 @@ def cmd_gui(_args):
     window = MainWindow()
     QTimer.singleShot(2500, lambda: (logo.finish(window), window.show()))
     sys.exit(app.exec())
+
+
+def _check_dependencies():
+    try:
+        require_windows_dependencies()
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 def build_parser() -> argparse.ArgumentParser:

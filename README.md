@@ -137,14 +137,43 @@ chmod +x L0p4Map.sh
 ### Windows
 
 ```powershell
-git clone https://github.com/HaxL0p4/L0p4Map.git
+git clone -b fix/windows-startup https://github.com/vordee/L0p4Map.git
 cd L0p4Map
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup-windows.ps1 -Launch
 ```
 
-Make sure nmap and Npcap are installed and available in the system PATH before launching the tool.
+Run this from PowerShell **as Administrator**. The setup finds Python 3.11+
+(or installs Python 3.12 through WinGet if available), creates a project-local
+`.venv`, and installs `requirements.txt`. Missing Nmap and Npcap are downloaded
+from their official websites, checked for a valid Authenticode signature, and
+installed through their normal installer windows. Complete those windows when
+they appear. Existing working installations are reused. No network scan is run.
+
+Nmap/Npcap installer versions are pinned to 7.991/1.89 in `setup-windows.ps1`.
+Their free installers require interaction; silent installation is not assumed.
+Npcap cancellation, installation errors, and a required reboot stop setup with
+an actionable message. The Nmap installer is invoked without TCP tuning changes
+or Npcap replacement. See the [Nmap installer documentation](https://nmap.org/book/inst-windows.html)
+and [Npcap installer documentation](https://npcap.com/guide/npcap-users-guide.html).
+
+For a diagnostic without installing or changing system settings:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup-windows.ps1 -CheckOnly
+```
+
+The diagnostic imports the required Python modules, executes `nmap --version`,
+and loads Npcap's DLL to read its version. It does not prove live packet capture.
+Use `-PythonExe 'C:\path\to\python.exe'` to select a Python installation, or
+`-VenvPath 'C:\path\to\venv'` to reuse an environment. GUI/scan startup also
+checks these dependencies and locates Nmap in the default installation folders
+when the current shell's PATH is stale.
+
+On Windows the GUI uses Qt's automatic graphics backend selection. The app
+does not force `--disable-gpu` or `--disable-software-rasterizer`, which caused
+WebEngine graphics context failures on the tested machine. Explicit
+`QTWEBENGINE_CHROMIUM_FLAGS` settings are preserved. Graphics configuration is
+applied before importing Qt GUI modules.
 
 ---
 
@@ -163,8 +192,7 @@ sudo ./L0p4Map.sh
 Open a terminal (PowerShell or CMD) as Administrator, then:
 
 ```powershell
-venv\Scripts\activate
-python L0p4Map.py
+    .\.venv\Scripts\python.exe .\__main__.py
 ```
 
 ### Workflow

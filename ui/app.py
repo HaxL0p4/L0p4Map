@@ -2,6 +2,10 @@ import sys
 import os
 import platform
 
+from core.gui_runtime import configure_gui_environment
+
+configure_gui_environment()
+
 if platform.system() == "Windows":
     import ctypes
     ctypes.windll.shell32.IsUserAnAdmin()
@@ -2620,8 +2624,6 @@ class MainWindow(QMainWindow):
 if __name__ == "__main__":
     if platform.system() == "Linux":
         check_root()
-    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--no-sandbox --disable-gpu --disable-software-rasterizer"
-    os.environ["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
     app = QApplication(sys.argv)
     logo = LogoIniziale()
     logo.show()

@@ -15,6 +15,8 @@ import psutil
 from scapy.all import ARP, ICMP, TCP, UDP, Ether, conf, sniff, sr1, srp
 from scapy.all import IP as ScapyIP
 
+from core.privileges import require_admin
+
 _vendor_cache: dict[str, str] = {}
 _oui_db: dict[str, str] = {}
 
@@ -240,8 +242,7 @@ def get_network_interfaces():
 
 
 def check_root():
-    if os.getuid() != 0:
-        raise PermissionError("Execute the program with SUDO!")
+    require_admin()
 
 
 def get_local_subnet(iface_name=None) -> str:
